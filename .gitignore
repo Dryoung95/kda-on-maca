@@ -1,0 +1,15 @@
+data/
+outputs/
+runs/
+profile/
+*.json
+*.ncu-rep
+*.nsys-rep
+*.sqlite
+__pycache__/
+*.py[cod]
+.venv/
+.cache/
+build/
+dist/
+*.egg-info/
