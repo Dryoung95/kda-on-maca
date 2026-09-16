@@ -15,19 +15,26 @@ instead of `ncu`, `mctracer_utils.py` instead of `ncu_report`.
 |---|---|---|---|
 | Workflow | `prompts/basic-flow.md`, `docs/agent-flow.md`, `CLAUDE.md` | same files, MACA environment section | ✅ direct port |
 | Profiling skill | `skills/ncu-report-skill` | `skills/mctracer-report-skill` | ✅ ported, with stated gaps |
-| Domain knowledge | `skills/KernelWiki` (B200/Hopper) | not ported | ❌ see below |
+| Domain knowledge | `skills/KernelWiki` (B200/Hopper) | `skills/c500-kernel-wiki` | ✅ replaced (not ported) |
 
 The workflow layer is a direct port — the nine-step loop, task contract,
 evidence records, and promotion rule are unchanged. The profiling skill keeps
 the same structure (SKILL.md + `reference/00-12` + `helpers/`) and the same
 CLI shape, with a different evidence source and honest coverage gaps.
 
-**KernelWiki is not ported.** It is 100% Blackwell/Hopper knowledge —
-`tcgen05`/TMEM/CLC/`wgmma`, FlashAttention-4, DeepGEMM — none of which applies
-to the C500 architecture, and its tag vocabulary (`sm100`, `sm90`, `tcgen05`)
-has no MACA equivalent. Porting it would mean writing a new knowledge base,
-not translating one. Add C500-specific kernel knowledge as a separate skill
-when there is a corpus to draw from.
+**KernelWiki is not ported — it is replaced.** Upstream KernelWiki is 100%
+Blackwell/Hopper knowledge — `tcgen05`/TMEM/CLC/`wgmma`, FlashAttention-4,
+DeepGEMM — none of which applies to the C500 architecture, and its tag
+vocabulary (`sm100`, `sm90`, `tcgen05`) has no MACA equivalent. Porting it
+would mean writing a new knowledge base, not translating one.
+
+`skills/c500-kernel-wiki` is that knowledge base: C500 hardware facts, warp-64
+implications, measured rooflines, shared-memory behavior, the CUDA→C500
+compatibility matrix, and mctlass authoring patterns. Every number in it comes
+from a microbenchmark in `skills/c500-kernel-wiki/probes/` or from a toolchain
+header, and every page carries provenance frontmatter saying which. The probes
+all build with `cucc … $MACA_CUCC_FLAGS` and are the reproducer for the page
+that cites them.
 
 ## Quick start
 

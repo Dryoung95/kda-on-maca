@@ -7,7 +7,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="${HOME}/.claude/skills"
 mkdir -p "$SKILL_DIR"
 
-for skill in mctracer-report-skill; do
+for skill in mctracer-report-skill c500-kernel-wiki; do
     src="$HERE/skills/$skill"
     dst="$SKILL_DIR/$skill"
     if [ -e "$dst" ] || [ -L "$dst" ]; then
@@ -21,6 +21,8 @@ done
 cat <<'NOTE'
 Skills installed. In a new Claude Code session, invoke with:
   /mctracer-report-skill
-or let the model trigger it when you ask to profile a kernel.
+  /c500-kernel-wiki
+or let the model trigger them when you ask to profile a kernel or ask why a
+C500 kernel is slow.
 
 NOTE

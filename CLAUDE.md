@@ -84,5 +84,6 @@ Use external skills only when they are relevant to the active task:
 
 - `humanize` for plan generation and implementation loops.
 - A domain knowledge skill for background research (upstream ships
-  KernelWiki, NVIDIA-flavored; it is not ported here — see `README.md`).
+  KernelWiki, NVIDIA-flavored; this repo ships `c500-kernel-wiki` instead —
+  see `README.md`).
 - `mctracer-report-skill` for profiling and performance evidence on C500.
