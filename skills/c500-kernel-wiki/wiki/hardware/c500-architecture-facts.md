@@ -1,3 +1,14 @@
+---
+title: C500 Architecture Facts
+tags: [architecture, device-properties, warp64, mctlass, mcflashinfer]
+architecture: [c500]
+type: hardware
+provenance: measured
+measured: 2026-09-15
+probe: torch.cuda.get_device_properties (in-page snippet)
+confidence: high
+---
+
 # C500 Architecture Facts (measured, not assumed)
 
 Everything on this page is either read off the device or measured by microbenchmark

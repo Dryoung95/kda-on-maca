@@ -93,5 +93,15 @@ re-run the probes in `probes/` and update any page whose numbers moved. The
 `measured:` date on each page tells you which are at risk of staleness; pages
 marked `header` need re-checking only if the referenced header changed.
 
+The toolchain enforces this rather than trusting it:
+
+```bash
+python3 scripts/validate.py            # provenance contract + probe compile
+python3 scripts/generate-indices.py    # rebuild queries/, incl. the probe reverse index
+```
+
+`queries/by-probe.md` maps each probe to every page that cites its numbers —
+that is the re-verification worklist after an SDK upgrade.
+
 Do not promote a page from `confidence: low` to `high` because it reads well.
 Promote it when a second probe or a real kernel result corroborates it.

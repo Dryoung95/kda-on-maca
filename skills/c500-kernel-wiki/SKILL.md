@@ -76,6 +76,29 @@ Every page says how it knows. If a page's claim would change with an SDK upgrade
 its frontmatter records the date and probe so you can tell which facts are at
 risk. See [references/schema.md](references/schema.md).
 
+## Tooling
+
+The measurement contract is enforced, not just claimed. Three scripts keep the
+wiki honest (run from this directory):
+
+```bash
+python3 scripts/validate.py            # frontmatter + provenance + probes compile
+python3 scripts/generate-indices.py    # regenerate queries/*.md
+python3 scripts/query.py --type hardware --compact
+```
+
+- **`validate.py`** — every page must carry provenance frontmatter; every
+  `provenance: measured` page must name a probe; every cited probe must exist
+  *and compile* with `cucc`. This is what makes "reproducible" true rather than
+  asserted. Pass `--no-compile` when the MACA toolchain is unavailable.
+- **`query.py`** — keyword search plus `--type`/`--tag`/`--provenance`/`--confidence`
+  filters. Use `--paths-only` from other scripts.
+- **`generate-indices.py`** — regenerates `queries/`. `queries/by-probe.md` is
+  the reverse index from each probe to the pages citing it: after an SDK upgrade,
+  re-run a probe and that index names exactly which pages to re-verify.
+
+Run `validate.py` after editing any page or probe.
+
 ## Conventions
 
 - All numbers are measured on this host unless marked `header` (read from a

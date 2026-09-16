@@ -1,3 +1,14 @@
+---
+title: CUDA to C500 Compatibility Matrix
+tags: [migration, compatibility, cooperative-groups, shfl, cp-async]
+architecture: [c500]
+type: migration
+provenance: measured
+measured: 2026-09-15
+probe: probes/probe_compat.cu
+confidence: high
+---
+
 # CUDA → C500 Compatibility Matrix
 
 What a CUDA-trained kernel author can keep, and what must change. Each row was
