@@ -1,0 +1,120 @@
+=== L1 P5 5_Matrix_scalar_multiplication
+compiled: True; correct:  False
+
+=== L1 P7 7_Matmul_with_small_K_dimension_
+compiled: True; correct:  False
+
+=== L1 P9 9_Tall_skinny_matrix_multiplication_
+compiled: True; correct:  False
+
+=== L1 P11 11_4D_tensor_matrix_multiplication
+compiled: True; correct:  False
+
+=== L1 P19 19_ReLU
+compiled: True; correct:  False
+
+=== L1 P20 20_LeakyReLU
+compiled: True; correct:  False
+
+=== L1 P21 21_Sigmoid
+compiled: True; correct:  False
+
+=== L1 P22 22_Tanh
+compiled: True; correct:  False
+
+=== L1 P23 23_Softmax
+compiled: True; correct:  False
+
+=== L1 P24 24_LogSoftmax
+compiled: True; correct:  False
+
+=== L1 P25 25_Swish
+compiled: True; correct:  False
+
+=== L1 P26 26_GELU_
+compiled: True; correct:  False
+
+=== L1 P27 27_SELU_
+compiled: True; correct:  False
+
+=== L1 P28 28_HardSigmoid
+compiled: True; correct:  False
+
+=== L1 P29 29_Softplus
+compiled: True; correct:  False
+
+=== L1 P30 30_Softsign
+compiled: True; correct:  False
+
+=== L1 P31 31_ELU
+compiled: True; correct:  False
+
+=== L1 P32 32_HardTanh
+compiled: True; correct:  False
+
+=== L1 P33 33_BatchNorm
+compiled: True; correct:  False
+
+=== L1 P34 34_InstanceNorm
+compiled: True; correct:  False
+
+=== L1 P35 35_GroupNorm_
+compiled: True; correct:  False
+
+=== L1 P36 36_RMSNorm_
+compiled: True; correct:  False
+
+=== L1 P37 37_FrobeniusNorm_
+compiled: True; correct:  False
+
+=== L1 P38 38_L1Norm_
+compiled: True; correct:  False
+
+=== L1 P39 39_L2Norm_
+compiled: True; correct:  False
+
+=== L1 P41 41_Max_Pooling_1D
+compiled: True; correct:  False
+
+=== L1 P45 45_Average_Pooling_2D
+compiled: True; correct:  False
+
+=== L1 P63 63_conv_standard_2D__square_input__square_kernel
+compiled: True; correct:  False
+
+=== L1 P76 76_conv_standard_1D_dilated_strided__
+compiled: True; correct:  False
+
+=== L1 P84 84_conv_depthwise_2D_asymmetric_input_square_kernel
+compiled: True; correct:  False
+
+=== L1 P87 87_conv_pointwise_2D
+compiled: True; correct:  False
+
+=== L1 P89 89_cumsum
+compiled: True; correct:  False
+
+=== L1 P90 90_cumprod
+compiled: True; correct:  False
+
+=== L1 P91 91_cumsum_reverse
+compiled: True; correct:  False
+
+=== L1 P92 92_cumsum_exclusive
+compiled: True; correct:  False
+
+=== L1 P93 93_masked_cumsum
+compiled: True; correct:  False
+
+=== L1 P94 94_MSELoss
+compiled: True; correct:  False
+
+=== L1 P95 95_CrossEntropyLoss
+compiled: True; correct:  False
+
+=== L1 P96 96_HuberLoss
+compiled: True; correct:  False
+
+=== L1 P97 97_ScaledDotProductAttention
+compiled: True; correct:  False
+
