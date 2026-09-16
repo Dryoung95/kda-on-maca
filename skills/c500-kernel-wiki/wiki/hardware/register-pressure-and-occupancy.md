@@ -100,8 +100,9 @@ reported register count is unreliable, treat this table as a bound on what is
 ## Probes
 
 - `probes/probe_regs.cu` — unroll sweep, throughput
-- `probes/probe_regs2.cu`–`probe_regs5.cu` — the register-count observability
-  experiments (each documents a way the reported count failed to track reality)
+- `probes/probe_regs2.cu`, `probes/probe_regs3.cu`, `probes/probe_regs4.cu`,
+  `probes/probe_regs5.cu` — the register-count observability experiments
+  (each documents a way the reported count failed to track reality)
 
 The negative results are the point of this page: a porting agent that tries to
 apply upstream Pattern K (register spill detection via `local_ld` counts) will

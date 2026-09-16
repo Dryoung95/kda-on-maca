@@ -17,6 +17,11 @@ Each probe prints its own results to stdout. Reproduce a wiki number before
 quoting it, especially after an SDK upgrade — these are properties of one
 toolchain version, not eternal truths.
 
+Every probe here is checked by `scripts/validate.py`, which compiles each one
+cited by a wiki page and fails if it does not build. `scripts/generate-indices.py`
+then emits `queries/by-probe.md`, the reverse index from each probe to the pages
+citing it — the re-verification worklist after an SDK upgrade.
+
 ## Probes
 
 | File | Measures | Feeds |

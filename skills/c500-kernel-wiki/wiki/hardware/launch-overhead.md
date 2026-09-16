@@ -75,3 +75,8 @@ optimization of the kernel body.
 See [c500-rooflines](c500-rooflines.md) for what a well-tuned kernel actually
 achieves, and use the mctracer-report-skill to measure the gap on your kernel
 rather than assuming it.
+
+## Probes
+
+- `probes/probe_launch.cu` — the block-size dimension of the sweep above
+- `probes/probe_launch2.cu` — the grid-size dimension (1 → 1664 blocks)

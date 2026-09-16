@@ -1,0 +1,5 @@
+# The query/index scripts parse flat YAML frontmatter with a small built-in
+# parser (see scripts/validate.py), so no runtime dependency is required.
+# PyYAML is listed only for parity with upstream KernelWiki's toolchain and
+# for any future tooling that wants to parse richer frontmatter.
+PyYAML>=6.0

@@ -1,3 +1,12 @@
+---
+title: MMA / Tensor Cores on C500
+tags: [mma, tensor-cores, mctlass, fragment-layout, operand-order]
+architecture: [c500]
+type: hardware
+provenance: header
+confidence: high
+---
+
 # MMA / Tensor Cores on C500
 
 Tensor cores exist on C500 and they are the dominant performance axis for

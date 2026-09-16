@@ -1,3 +1,14 @@
+---
+title: Shared Memory on C500
+tags: [shared-memory, banks, barriers, bank-conflict, divergence]
+architecture: [c500]
+type: hardware
+provenance: measured
+measured: 2026-09-16
+probe: probes/probe_smem_mixed.cu
+confidence: high
+---
+
 # Shared Memory on C500: Banks, Barriers, and a Common Misdiagnosis
 
 The NVIDIA mental model for shared memory is 32 banks, 4 bytes wide, stride-32

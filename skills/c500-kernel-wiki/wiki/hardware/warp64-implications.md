@@ -1,3 +1,14 @@
+---
+title: Warp Size 64 — What Actually Changes
+tags: [warp64, warp-size, shuffle, reduction, block-size]
+architecture: [c500]
+type: hardware
+provenance: measured
+measured: 2026-09-15
+probe: probes/probe_blocksize.cu
+confidence: high
+---
+
 # Warp Size 64: What Actually Changes
 
 The single highest-impact divergence from NVIDIA-flavored CUDA on this board.
