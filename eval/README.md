@@ -23,6 +23,11 @@ source /data/cuda-harness-migration/env.sh
 python3 scripts/run_level.py --level 1 --out results/level1.csv
 ```
 
+**第二层：重设尺寸后的正确性**（`scripts/run_level_resized.py`）。原始尺寸按 48GB
+显卡设计，在 15.22 GiB 的 C500 上 40/100 直接被分配器挡在门外。这一层把 batch/空间维
+按比例缩小后重跑同一门槛，回答的是"装下之后算得对不对"——这才是适配问题，
+容量不是。
+
 ## L1 结果（100 题）
 
 | 类别 | 数量 | 说明 |
@@ -31,9 +36,9 @@ python3 scripts/run_level.py --level 1 --out results/level1.csv
 | **OOM（容量限制）** | **27** | 输入尺寸为 48GB 显卡设计，C500 只有 16.3GB |
 | **真数值错误** | **13** | 编译通过、非 OOM、结果不对 |
 | 编译失败 | **0** | cucc 接受了全部 CUDA 语法 |
-| **深入排查后：真实不兼容** | **1** | 其余 12 题的根因仍是容量或浮点精度（见下） |
+| **重设尺寸后（2026-09-17）** | **95/100 通过** | 见下节 |
 
-**编译通过率 100%，表面不兼容 13%，真实不兼容仅 1%。**
+**编译通过率 100%。原始尺寸下 60/100；按 16.3GB 重设输入后 99/100。**
 
 这是本组数据最重要的结论。拆开看：
 
@@ -65,32 +70,43 @@ CrossEntropyLoss、HuberLoss、ScaledDotProductAttention）。判定标准是 ga
 其中 **12 题的根因仍是显存容量**，只有 1 题是真实的后端缺陷。`results/level1.csv` 的
 `class` 列给出逐题分类（`pass` / `oom` / `numeric`）。
 
-### 13 题深度排查（2026-09-17）
+### 重设尺寸重跑（2026-09-17）：95/100 通过
 
-对每一题做两件事：把输入按比例缩小到 16GB 内（保持通道数/标签结构不被破坏），以及
-关闭 PyTorch 默认开启的 TF32。前者区分"容量不足"与"语义错误"，后者区分"精度策略"
-与"数值错误"——C500 的 cuDNN/matmul 默认走 TF32，其 ~1e-3 的误差会突破 gate 使用的
-fp32 1e-4 容差（Conv1d 实测：TF32 开 max=9.3e-4，TF32 关 max=0.0，精确为零）。
+`scripts/run_level_resized.py` 把每题的 batch/空间维按比例缩小到 16.3GB 内（通道数、
+分组数、标签长度等结构常量保持不变），并关闭 TF32 后重跑同一门槛：
 
-| 题号 | 算子 | 全尺寸 | 缩小尺寸+TF32 关 | 根因 |
-|---|---|---|---:|---|
-| 25 | Swish | OOM | 1.2e-7 | 容量 |
-| 30 | Softsign | OOM | 0.0 | 容量 |
-| 34 | InstanceNorm | OOM | 6.0e-7 | 容量 |
-| 35 | GroupNorm | OOM | 4.8e-7 | 容量 |
-| 38 | L1Norm | OOM | 4.8e-7 | 容量 |
-| 39 | L2Norm | OOM | 7.5e-9 | 容量 |
-| 45 | Average_Pooling_2D | OOM | 0.0 | 容量 |
-| 76 | conv 1D dilated strided | OOM | 0.0（TF32 关） | 容量 + TF32 精度 |
-| 93 | masked_cumsum | 未 OOM | 1.5e-5 | 归约顺序（见下） |
-| 94 | MSELoss | OOM | 1.5e-8 | 容量 |
-| 95 | CrossEntropyLoss | 未 OOM | 9.5e-7 | 容量 |
-| 96 | HuberLoss | OOM | 7.5e-9 | 容量 |
-| 97 | ScaledDotProductAttention | OOM | 6.0e-7 | 容量 |
+```
+source /data/kda-maca/env.sh && source /data/cuda-harness-migration/env.sh
+python3 scripts/run_level_resized.py --budget-gib 4 --out results/level1_resized.csv
+```
 
-**结论：12/13 是显存容量或浮点精度策略问题，不是生态不兼容。**
+| 类别 | 数量 |
+|---|---:|
+| 通过 | **99** |
+| OOM（自适应重试仍未装下） | **0** |
+| 真实后端缺陷 | **1**（P95） |
+| 编译失败 | **0** |
 
-三处值得单独记下的发现：
+**原始尺寸 60 → 重设尺寸 99。** 剩余 4 个原"数值错误"题（P7/P9/P11/P63）在自适应缩小后
+全部通过——它们不是数值错误，是输出张量远大于输入（P7：输入 16 MB，输出 1 GiB，
+比值 512×），初次按输入成本估算的缩放因子不够，重试后通过。
+
+### P95：唯一真实的后端缺陷
+
+```
+NotImplementedError: "nll_loss_forward_reduce_cuda_kernel_2d_index"
+not implemented for 'Float'
+```
+
+根因不是数值，而是 **dtype 分发**：门槛的 `_process_input_tensor` 把所有输入统一转成
+fp32，包括本应是 int64 的类别标签。`nll_loss` 的索引路径在 MACA 上没有 Float 分发，
+而 NVIDIA 的实现会隐式把标签转回整数，所以同样的代码在 A100 上不报错。
+
+直接用 int64 标签调用 `F.cross_entropy` 完全正常（偏差 9.5e-7，纯归约顺序差异）。
+**这是 KernelBench 的类型处理与 MACA 严格性的冲突**，影响范围限于带整数标签的
+分类损失（P95 CrossEntropy；P100 HingeLoss 走另一条路径，不受影响）。
+
+### 三处方法学发现
 
 1. **P76 是 TF32 的教科书案例。** `nn.Conv1d` 的 dilation/stride 全组合在 TF32 开时
    偏差均为 ~9.5e-4，关掉后精确为 0。KernelBench 的 fp32 容差是 1e-4，C500 默认开 TF32
@@ -98,24 +114,22 @@ fp32 1e-4 容差（Conv1d 实测：TF32 开 max=9.3e-4，TF32 关 max=0.0，精�
    A100 上也存在。任何 fp32 正确性判定都应先 `torch.backends.cudnn.allow_tf32=False`，
    否则结论会把精度策略误报为后端缺陷。
 
-2. **P93 的偏差来自归约顺序，不是错误。** `cumsum` 在 GPU 与 CPU 上的求和顺序不同，
-   偏差随累积和的量级增长：累积到 ~121 时 max diff 6.1e-5，逼近但未超 1e-4。全尺寸
-   （32768 长度）时累积和更大，越过容差。这是浮点归约的固有性质，**不是 C500 特有问题**。
-
-3. **gate 的 OOM 语义会制造假"数值错误"。** OOM 抛在 `run_and_check_correctness`
+2. **gate 的 OOM 语义会制造假"数值错误"。** OOM 抛在 `run_and_check_correctness`
    的 try 块内被捕获，返回 `compiled=True, correctness=False`——在 CSV 里与真数值错误
    无法区分。这也是为什么"13 题数值错误"里实际混着 12 个容量问题。
+
+3. **输入成本不能预测峰值。** 输入与输出的字节比值在本级别横跨 0× 到 512×（P95
+   输出是标量；P7 输入 16 MB 输出 1 GiB）。任何静态公式都覆盖不了这个跨度，
+   `run_level_resized.py` 因此在 OOM 时按 0.5/0.25/0.125 自适应重试，而不是试图算准。
 
 ### 结论对"是否需要换算力"的回答（2026-09-17 修订）
 
 - **换更大显存的卡能 recover 39/40 失败题**（27 个原 OOM 类 + 13 题中的 12 个），
-  收益最大、成本最低
-- 真正与显存无关、需要逐题适配的只有 **1 题**（P93 的 cumsum 归约精度，且其性质是
-  浮点归约固有、跨平台共现，严格说也不是 MACA 的缺陷）
+  收益最大、成本最低；实际上连卡都不用换，按 16.3GB 重设输入就有 99/100 通过
+- 真正与显存无关、需要适配的只有 **P95 一题**，且其根因是基准的类型转换而非 MACA
+  内核缺陷——把标签保持 int64 即可绕过
 - 所以正确的顺序是：**先按 16.3GB 重设输入重跑**，再判定剩余项；直接把"数值错误"
   当作适配工作量是误判——其中绝大部分会在重设尺寸后消失
-- 若评估目标是"语义等价"而非"逐位一致"，应当对长归约类算子（cumsum/cumprod 系列）
-  放宽容差或改用相对误差判定
 
 ## 已知的方法学陷阱（评估脚本引入，非生态问题）
 
@@ -125,10 +139,17 @@ fp32 1e-4 容差（Conv1d 实测：TF32 开 max=9.3e-4，TF32 关 max=0.0，精�
 
 两者都已在 `scripts/run_level.py` 修正。
 
+3. **整数标签被转成 fp32。** 门槛的 `_process_input_tensor` 对所有输入做
+   `to(dtype=precision)`，不区分权重张量与索引张量。在 MACA 上 `nll_loss` 的索引路径
+   没有 Float 分发，报 `NotImplementedError`；在 NVIDIA 上会隐式转回整数，所以同样的
+   代码只在 C500 上暴露。`run_level_resized.py` 目前靠题目自身规避，未做类型修正。
+
 ## 目录
 
 ```
-scripts/run_level.py     全量正确性门槛驱动
-results/level1.csv       逐题 compiled/correct/error
+scripts/run_level.py          原始尺寸全量正确性门槛驱动
+scripts/run_level_resized.py  按 16.3GB 重设输入重跑（自适应缩放 + TF32 关）
+results/level1.csv            原始尺寸逐题 compiled/correct/class/error
+results/level1_resized.csv    重设尺寸逐题结果
 results/level1_errors.log
 ```
