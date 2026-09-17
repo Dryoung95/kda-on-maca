@@ -50,12 +50,18 @@ Tried to allocate 6.00 GiB. GPU has 15.22 GiB total, 3.05 GiB free.
 OOM 高发区。这一类换更大显存的卡、或按 16.3GB 重设输入尺寸即可 recover，**不是需要
 适配工作的不兼容**。
 
-**3. 真实不兼容只有 13 题**（Swish、Softplus、InstanceNorm、GroupNorm、FrobeniusNorm、
-L1Norm、L2Norm、Average_Pooling_2D、conv_standard_1D_dilated_strided、masked_cumsum、
-MSELoss、CrossEntropyLoss、HuberLoss、ScaledDotProductAttention）。已抽查确认 Swish 与
-MSELoss 非 OOM、编译通过、结果不对——**真数值/语义差异**。
+**3. 真实不兼容只有 13 题**（Swish、Softsign、InstanceNorm、GroupNorm、L1Norm、L2Norm、
+Average_Pooling_2D、conv_standard_1D_dilated_strided、masked_cumsum、MSELoss、
+CrossEntropyLoss、HuberLoss、ScaledDotProductAttention）。判定标准是 gate 的 stderr 里
+是否出现 `OutOfMemoryError`——OOM 归容量类，其余归数值类。Swish、Softsign、MSELoss
+已逐题复跑确认：编译通过、无 OOM、结果不对——**真数值/语义差异**。
 
-这 13 题才是后续适配与优化的真实工作量。
+顺带修正两个容易误判的地方：**Softplus（P29）与 FrobeniusNorm（P37）会 OOM**，看起来
+像数值错误，实际是容量限制；而 Softsign（P30）反过来，看起来像 OOM 实测却是数值错误。
+分类必须看 allocator 报文，不能按算子家族猜。
+
+这 13 题才是后续适配与优化的真实工作量。`results/level1.csv` 的 `class` 列给出逐题分类
+（`pass` / `oom` / `numeric`）。
 
 ### 结论对"是否需要换算力"的回答
 

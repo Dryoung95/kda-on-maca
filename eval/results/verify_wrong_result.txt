@@ -1,11 +1,17 @@
 P25 (25_Swish): OOM=False
-problem:  25_Swish.py
-compiled: True
-correct:  False
-[92m10:29:09 - LiteLLM:WARNING[0m: get_model_cost_map.py:271 - LiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: The read operation timed out. Falling back to local backup.
----
+P30 (30_Softsign): OOM=False
+P34 (34_InstanceNorm): OOM=False
+P35 (35_GroupNorm_): OOM=False
+P38 (38_L1Norm_): OOM=False
+P39 (39_L2Norm_): OOM=False
+P45 (45_Average_Pooling_2D): OOM=False
+P76 (76_conv_standard_1D_dilated_strided__): OOM=False
+P93 (93_masked_cumsum): OOM=False
 P94 (94_MSELoss): OOM=False
-problem:  94_MSELoss.py
-compiled: True
-correct:  False
+P95 (95_CrossEntropyLoss): OOM=False
+P96 (96_HuberLoss): OOM=False
+P97 (97_ScaledDotProductAttention): OOM=False
 ---
+Re-verified 2026-09-17 by rerunning the gate on all 40 failures.
+Classification rule: OutOfMemoryError in gate stderr -> oom, else numeric.
+Numeric count: 13. OOM count: 27 (see level1.csv class column).
