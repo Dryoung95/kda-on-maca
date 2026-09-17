@@ -37,6 +37,17 @@ def rename_to_model_new(src: str) -> str:
     return re.sub(r"\bsuper\(\s*Model\s*,", "super(ModelNew,", src)
 
 
+def classify_failure(blob: str) -> str:
+    """A failed problem is either a capacity limit or a real defect.
+
+    The distinction changes the conclusion: an OOM problem recovers on a
+    bigger board, a numeric problem does not. The allocator message in the
+    gate's stderr is the only reliable place to split the two."""
+    if "OutOfMemoryError" in blob or "out of memory" in blob.lower():
+        return "oom"
+    return "numeric"
+
+
 def run_one(level: int, problem: int, timeout: int = 300):
     lvl = DATASET / f"level{level}"
     matches = sorted(lvl.glob(f"{problem}_*.py"))
@@ -76,8 +87,14 @@ def run_one(level: int, problem: int, timeout: int = 300):
         if not compiled or not correct:
             lines = [l for l in out.splitlines() if "compiled:" in l or "correct:" in l]
             reason = "; ".join(lines) if lines else (err.splitlines() or [""])[0][:200]
-        return {"level": level, "problem": problem, "name": ref_file.stem,
-                "compiled": compiled, "correct": correct, "error": reason}
+        # class distinguishes "board too small" from "actually wrong". Without
+        # it the two collapse into one 40-row failure list and the headline
+        # conclusion ("only 13 are real") becomes unverifiable from the CSV.
+        row = {"level": level, "problem": problem, "name": ref_file.stem,
+               "compiled": compiled, "correct": correct,
+               "class": classify_failure(out + "\n" + err) if not correct else "pass",
+               "error": reason}
+        return row
 
 
 def main():
@@ -113,7 +130,7 @@ def main():
 
     with out_path.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["level", "problem", "name",
-                                          "compiled", "correct", "error"])
+                                          "compiled", "correct", "class", "error"])
         w.writeheader()
         w.writerows(rows)
 
