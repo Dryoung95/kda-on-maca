@@ -20,10 +20,16 @@ MACA 在 API 层正确地把 `warpSize` 声明为 64，但多个组件的内部�
 | # | 缺陷 | 严重度 | 状态 |
 |---|---|---|---|
 | 1 | `wmma::load_matrix_sync` fragment 布局按 warp 32 展开 | 🔴 严重，静默 | 未修复，不可用 |
-| 2 | ~~`wmma::store_matrix_sync` 是 no-op~~ | — | **误判已排除** |
+| 2 | `wmma::store_matrix_sync` 忽略 layout tag | 🟡 中等，静默 | store 后转置可规避 |
 | 3 | mctlass SIMT epilogue 只写一半行 | 🔴 严重，静默 | 未修复，不可用 |
 | 4 | mxcc `-O2` inlining 导致 host segfault | 🟡 有规避 | `-fno-inline` |
 | 5 | `shfl_down_sync` offset≥32 时复制而非交换 | 🟡 中等，静默 | 未修复，5 轮可规避 |
+
+**与仓库已有报告的关系**：`defects/README.md` 是更早一轮排查的产物，
+覆盖 D1–D5（与本报告的 1/2/3/4 对应，其 D3 与本报告缺陷 1 同源）。
+两份报告结论一致。本报告的**新增内容**是缺陷 5（`shfl_down_sync` 的
+复制语义，及其对 wiki 中 6 轮归约结论的推翻）——这是本轮排查的独立发现，
+旧报告没有。建议以 `defects/README.md` 为主报告，本文件作为补充。
 
 ---
 
@@ -54,19 +60,27 @@ ldm=24: exact=False  matching=4/256   (同一模式，与 padding 无关)
 
 ---
 
-## 缺陷 2：`wmma::store_matrix_sync` 实测**正常**（推翻先前结论）
+## 缺陷 2：`wmma::store_matrix_sync` 忽略 layout tag（中等，静默）
 
-**说明**：此前怀疑 store 是 no-op。本次重测，用已知值填充 fragment 后存储，
-256 个元素全部落在正确位置：
+**注意**：本次重测我先验证了 store 的**写入完整性**——256 个元素全部写入，
+唯一为零的元素 `[0,0]` 期望值本来就是 0。所以 store **不是 no-op**，
+先前"no-op"的说法是错的。**但 layout tag 确实被忽略**，这是一个独立的语义缺陷。
+
+**实测**（`optloop/diag_store2.py`，fragment 值编码为 `100*row+col`）：
 
 ```
-nonzero count: 255           ← 唯一为 0 的元素是 [0,0]，其期望值本来就是 0
-zero element positions: [[0, 0]]
-expected value at that position: 0
+mem_row_major: matches_expected=False
+  out[0,:4] = [  0 100 200 300]  expected [0 1 2 3]
+  out[:,0]  = [ 0  1  2 ... 15]  expected [ 0 16 32 ... 240]
+mem_col_major: matches_expected=False
+  out[0,:4] = [  0 100 200 300]  expected [ 0 16 32 48]
+  out[:,0]  = [ 0  1  2 ... 15]  expected [ 0  1  2 ... 15]
 ```
 
-store 本身没有缺陷。先前"no-op"的判断是错误的（很可能是混用了 fill 语义
-不同的早期测试）。**这一条应从缺陷清单中移除。**
+**两个 tag 产出完全相同的输出**（都是转置布局）。`mem_row_major` 的语义
+被忽略，任何期望它按文档生效的代码会静默得到转置结果。
+
+**可规避**：store 后再做一次转置，代价是一次额外全矩阵 pass。
 
 ---
 
@@ -182,9 +196,10 @@ for (int offset = 16; offset > 0; offset >>= 1)
 
 | 组件 | 结论 |
 |---|---|
-| `wmma::store_matrix_sync` | ✅ 正确（此前怀疑 no-op 是误判） |
 | `wmma::mma_sync`（`__builtin_mxc_mma_16x16x16f16`） | ✅ 正确 |
-| `__shfl_sync` / `__shfl_down_sync`（64 位 mask） | ✅ 正常 |
+| `wmma::fill_fragment` | ✅ 正确 |
+| `wmma::store_matrix_sync` 写入完整性 | ✅ 256/256 元素写入（不是 no-op） |
+| `__shfl_sync`（offset < 32） | ✅ 正常 |
 | `atomicAdd` 及同族 | ✅ 正常 |
 | `__fmaf_rn` | ✅ 正常 |
 | mcblas GEMM | ✅ 正确且调优（操作数顺序相反，见下） |
