@@ -31,18 +31,28 @@ inputs where the missing step is an identity.
 
 ## Correct reduction pattern
 
+> **Corrected 2026-09-22 — this section previously had the two snippets
+> backwards.** `__shfl_down_sync` on C500 does not *swap* across the offset-32
+> boundary, it *copies*: at offset 32, lane 0 receives lane 32's value but
+> lane 32 receives its own. A 6-round reduction therefore adds the high half
+> twice, giving exactly 2× the correct sum (measured: 2016 vs 4032). The
+> 5-round pattern below is the one that is correct on this SDK.
+
 ```cpp
-// WRONG on C500: assumes 5 rounds for a 32-lane warp
+// RIGHT on C500 (MACA 3.3.0.15): 5 rounds, never crosses offset 32
 for (int offset = 16; offset > 0; offset >>= 1)
     v += __shfl_down_sync(0xffffffffffffffffULL, v, offset);
 
-// RIGHT: derive from warpSize, works on both
+// WRONG on C500: the offset-32 round copies instead of swapping, so the
+// high half is counted twice
 for (int offset = warpSize / 2; offset > 0; offset >>= 1)
     v += __shfl_down_sync(0xffffffffffffffffULL, v, offset);
 ```
 
-Use `warpSize` (it is a compile-time device constant, the compiler folds it) or
-`__MACA_ARCH__`-guarded constants. Never write `16` or `32` as a reduction depth.
+If the two 32-lane halves must genuinely be combined, do it with an explicit
+exchange (`__shfl_sync` to a target lane) rather than relying on
+`shfl_down` semantics across the boundary. This behaviour differs from CUDA
+and may change in later SDK versions — re-verify after any MACA upgrade.
 
 Mask literals are the other silent-failure site: `0xffffffff` is a 32-bit mask
 that leaves the top 32 lanes out of a `__shfl_sync`. On C500 the full mask is
@@ -82,10 +92,13 @@ bound suffer, because one divergent branch now wastes up to 64 lanes.
 
 Auditing a CUDA-flavored kernel for C500:
 
-- `16`, `32` as reduction offsets or shuffle widths → derive from `warpSize`.
+- `16`, `32` as reduction offsets or shuffle widths → see the note above;
+  offset 32 copies rather than swaps on this SDK, so a 6-round reduction
+  silently doubles the result.
 - `0xffffffff` as a shfl/ballot mask → extend to 64-bit.
 - `31` as a lane mask (`laneId & 31`) → `& (warpSize-1)`.
-- `5` as a reduction round count → 6, or derived.
+- `5` as a reduction round count → on C500 this is the *correct* value, not a
+  bug; it is a bug only on hardware where `shfl_down` swaps across 32.
 - `>= 32` / `< 32` divergence guards sized to NVIDIA warps.
 - Shared-memory tile widths of 32 or 33 (classic bank padding) — the padding
   logic needs revisiting for 64-wide groups; see
