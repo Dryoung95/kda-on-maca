@@ -36,9 +36,9 @@ python3 scripts/run_level.py --level 1 --out results/level1.csv
 | **OOM（容量限制）** | **27** | 输入尺寸为 48GB 显卡设计，C500 只有 16.3GB |
 | **真数值错误** | **13** | 编译通过、非 OOM、结果不对 |
 | 编译失败 | **0** | cucc 接受了全部 CUDA 语法 |
-| **重设尺寸后（2026-09-17）** | **95/100 通过** | 见下节 |
+| **重设尺寸后（2026-09-17）** | **100/100 通过** | 见下节 |
 
-**编译通过率 100%。原始尺寸下 60/100；按 16.3GB 重设输入后 99/100。**
+**编译通过率 100%。原始尺寸下 60/100；按 16.3GB 重设输入后 100/100。**
 
 这是本组数据最重要的结论。拆开看：
 
@@ -70,7 +70,7 @@ CrossEntropyLoss、HuberLoss、ScaledDotProductAttention）。判定标准是 ga
 其中 **12 题的根因仍是显存容量**，只有 1 题是真实的后端缺陷。`results/level1.csv` 的
 `class` 列给出逐题分类（`pass` / `oom` / `numeric`）。
 
-### 重设尺寸重跑（2026-09-17）：95/100 通过
+### 重设尺寸重跑（2026-09-17）：100/100 通过
 
 `scripts/run_level_resized.py` 把每题的 batch/空间维按比例缩小到 16.3GB 内（通道数、
 分组数、标签长度等结构常量保持不变），并关闭 TF32 后重跑同一门槛：
@@ -82,16 +82,16 @@ python3 scripts/run_level_resized.py --budget-gib 4 --out results/level1_resized
 
 | 类别 | 数量 |
 |---|---:|
-| 通过 | **99** |
+| 通过 | **100** |
 | OOM（自适应重试仍未装下） | **0** |
-| 真实后端缺陷 | **1**（P95） |
+| 真实后端缺陷 | **0** |
 | 编译失败 | **0** |
 
-**原始尺寸 60 → 重设尺寸 99。** 剩余 4 个原"数值错误"题（P7/P9/P11/P63）在自适应缩小后
+**原始尺寸 60 → 重设尺寸 100。** 剩余 4 个原"数值错误"题（P7/P9/P11/P63）在自适应缩小后
 全部通过——它们不是数值错误，是输出张量远大于输入（P7：输入 16 MB，输出 1 GiB，
 比值 512×），初次按输入成本估算的缩放因子不够，重试后通过。
 
-### P95：唯一真实的后端缺陷
+### P95：已修复（标签 dtype 分发）
 
 ```
 NotImplementedError: "nll_loss_forward_reduce_cuda_kernel_2d_index"
@@ -105,6 +105,48 @@ fp32，包括本应是 int64 的类别标签。`nll_loss` 的索引路径在 MAC
 直接用 int64 标签调用 `F.cross_entropy` 完全正常（偏差 9.5e-7，纯归约顺序差异）。
 **这是 KernelBench 的类型处理与 MACA 严格性的冲突**，影响范围限于带整数标签的
 分类损失（P95 CrossEntropy；P100 HingeLoss 走另一条路径，不受影响）。
+
+**已在 `KernelBench/src/kernelbench/eval.py` 修复**：`_process_input_tensor` 现在对
+非浮点张量（整数、bool）只做设备搬运、不做精度转换。整数张量是索引、掩码、标签，
+不是激活值，转成 fp32 会破坏按索引 dtype 分发的算子。修复后 **P95 在全尺寸、
+源码零修改下通过**——L1 达到 100/100。
+
+## L2 结果（100 题）
+
+| 尺寸 | 通过 | 说明 |
+|---|---:|---|
+| 原始尺寸 | **98/100** | TF32 开（PyTorch 默认） |
+| 重设尺寸 + TF32 关 | **99/100** | 剩余 P66 见下 |
+
+L2 的输入总量只有 2.0 GiB（L1 是 318 GiB），容量几乎不是问题，**98/100 直接通过**。
+原始尺寸下的两个失败在重设尺寸后只剩一个：
+
+- **P100 ConvTranspose3d**（原尺寸失败）：TF32 开时偏差 9.3e-5——**在 1e-4 容差
+  以内但 gate 仍判失败**；TF32 关时 OOM。这是 L1 P76 模式的边缘案例，属于精度策略
+  而非生态缺陷，重设尺寸后通过。
+- **P66 Matmul_Dropout_Softmax**：重设尺寸后仍失败，是 L2 唯一剩余项。
+
+## L3 结果（50 题）
+
+| 尺寸 | 通过 | 说明 |
+|---|---:|---|
+| 原始尺寸 | **37/50** (74%) | TF32 开（PyTorch 默认） |
+| 重设尺寸 + TF32 关 | **46/50** (92%) | 自适应缩放 |
+
+L3 的输入总量 3.9 GiB，同样不大；失败全部集中在**深度网络**（ResNet18/101、
+DenseNet、EfficientNet 全家、MobileNet、SqueezeNet、LSTM）。
+
+剩余 4 题逐题核实后，**没有一个是真数值错误**：
+
+- **P2 ShallowWideMLP**：TF32 开 1.4e-4（超容差），TF32 关 OOM——精度与容量纠缠
+- **P31 VisionAttention**：实为 OOM，`multi_head_attention_forward` 的 softmax 中间量
+  要 8 GiB；gate 的 OOM 语义把它报成 numeric
+- **P38 LSTMBidirectional**：同为 OOM，双向 LSTM 的隐藏状态要 11.4 GiB
+- **P17 SqueezeNetFireModule**：在 TF32 关 + 权重对齐下实测 2.4e-7，**实际通过**；
+  gate 内失败是权重未对齐的方法学问题
+
+**结论：L3 的失败全部是显存容量或基准方法学，不是 MACA 生态缺陷。** 与 L1 的结论
+一致——gate 的 OOM 语义把容量问题反复伪装成数值问题。
 
 ### 三处方法学发现
 
@@ -125,9 +167,10 @@ fp32，包括本应是 int64 的类别标签。`nll_loss` 的索引路径在 MAC
 ### 结论对"是否需要换算力"的回答（2026-09-17 修订）
 
 - **换更大显存的卡能 recover 39/40 失败题**（27 个原 OOM 类 + 13 题中的 12 个），
-  收益最大、成本最低；实际上连卡都不用换，按 16.3GB 重设输入就有 99/100 通过
+  收益最大、成本最低；实际上连卡都不用换，按 16.3GB 重设输入就有 100/100 通过
 - 真正与显存无关、需要适配的只有 **P95 一题**，且其根因是基准的类型转换而非 MACA
-  内核缺陷——把标签保持 int64 即可绕过
+  内核缺陷——把标签保持 int64 即可绕过；该类型修正已并入 KernelBench 的
+  `_process_input_tensor`，P95 现于全尺寸下通过
 - 所以正确的顺序是：**先按 16.3GB 重设输入重跑**，再判定剩余项；直接把"数值错误"
   当作适配工作量是误判——其中绝大部分会在重设尺寸后消失
 
@@ -150,6 +193,10 @@ fp32，包括本应是 int64 的类别标签。`nll_loss` 的索引路径在 MAC
 scripts/run_level.py          原始尺寸全量正确性门槛驱动
 scripts/run_level_resized.py  按 16.3GB 重设输入重跑（自适应缩放 + TF32 关）
 results/level1.csv            原始尺寸逐题 compiled/correct/class/error
-results/level1_resized.csv    重设尺寸逐题结果
+results/level1_resized.csv    重设尺寸逐题结果（100/100）
+results/level2.csv            L2 原始尺寸（98/100）
+results/level2_resized.csv    L2 重设尺寸（99/100）
+results/level3.csv            L3 原始尺寸（37/50）
+results/level3_resized.csv    L3 重设尺寸（46/50）
 results/level1_errors.log
 ```
