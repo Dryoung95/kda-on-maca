@@ -28,40 +28,30 @@ mctlass device 层 GEMM 在所有尺寸下输出**静默错误结果**（不崩�
 
 ---
 
-## D1 — mctlass device GEMM epilogue 从第 8 行起每行写错若干元素
+## D1 — mctlass device GEMM epilogue 每个 16 行 tile 漏写 8 行
 
 **组件**：`mctlass`（MACA 的 CUTLASS 对应物），`gemm/device/gemm.h` 的 SIMT epilogue
 
 ### 现象
 
-用单位矩阵测试 `C = A @ I`（A 为 128×128 单位阵，正确结果 C == A）：
+单位矩阵测试 `C = A @ I`（`C` 先清零）。首个错误位置**永远是 `(r=8, c=8)`**，
+错误总数恒为**行数 × 8**——每个 16 行的 tile 里恰好 8 行没被写
+（`defects/repro/mctlass/mt3sweep.cu`，RowMajor 主算子，pristine 头文件，`-O0 -fno-inline`）：
 
 ```
-init=0 ws=0
-run=0                    ← Status::kSuccess，没有任何错误信号
-n=128 mismatched=584 (expect 0)
+square 128     m=128 n=128 k=128 mismatched= 584 (of 16384) firstBad=(r=8 c=8)
+square  64     m= 64 n= 64 k= 64 mismatched=  64 (of  4096) firstBad=(r=8 c=8)
+square 256     m=256 n=256 k=256 mismatched=2080 (of 65536) firstBad=(r=8 c=8)
+nonsquare A    m=128 n= 64 k= 96 mismatched= 254 (of  8192) firstBad=(r=8 c=8)
+nonsquare B    m= 64 n=128 k= 96 mismatched= 288 (of  8192) firstBad=(r=8 c=8)
+tall           m=200 n= 64 k= 64 mismatched= 272 (of 12800) firstBad=(r=8 c=8)
 ```
 
-逐行统计（`defects/repro/mt3tail.cu`，RowMajor 主算子，`-O0 -fno-inline`）：
+未写入的行保留 `C` 的初始值。**若 `C` 未清零，读到的是旧数据——看起来像
+"未初始化的垃圾"，实际是 epilogue 根本没写那些行**（此前一处误判正是因此产生）。
+非方阵同样复现，与形状无关。RowMajor 与 ColumnMajor 特化**都**受损。
 
-| n | 错误元素总数 | 出错行数 | 第一行出错 | 最后一行出错 | 每行错误元素数 |
-|---|---|---|---|---|---|
-| 64 | 64 | 32 | **8** | 63 | 2 |
-| 96 | 150 | 48 | **8** | 95 | 1 |
-| 128 | 232 | 64 | **8** | 127 | 3 |
-| 192 | 464 | 96 | **8** | 191 | 3 |
-| 256 | 640 | 128 | **8** | 255 | 2 |
-
-**规律**：第 0–7 行完全正确，**第 8 行起每一行都错**，每行只有 1–3 个元素错。
-ColumnMajor 特化同样受损（`mt3colbad.cu`：n=64/128/256 分别 64/232/1192 个错误元素）。
-
-错误值不是转置、不是零，而是**未初始化的累加器垃圾**：
-
-```
-C[8][104]=1.00     ← 正确值
-C[8][110]=0.04     ← 垃圾
-C[8][114]=-0.46    ← 垃圾
-```
+程序返回 `Status::kSuccess`（`init=0 run=0`），没有任何错误信号。
 
 ### 根因（已定位到代码行）
 
@@ -280,18 +270,27 @@ lane 32: v=32 down32=32   ← 拿到自己的值，不是 lane 0 的值
 ```bash
 source /data/kda-maca/env.sh          # MACA_PATH、cucc 到 PATH、$MACA_CUCC_FLAGS
 
-# mctlass 复现（.cu 程序）
-cd defects/repro
-cucc mt3tail.cu -O0 -fno-inline -std=c++17 \
+# mctlass 复现（.cu 程序，pristine 头文件）
+cd defects/repro/mctlass
+cucc mt3sweep.cu -O0 -fno-inline -std=c++17 \
      -I/opt/maca-3.3.0/tools/cu-bridge/include \
-     -I/opt/maca-3.3.0/include $MACA_CUCC_FLAGS -o mt3tail
-./mt3tail
+     -I/opt/maca-3.3.0/include $MACA_CUCC_FLAGS -o mt3sweep
+./mt3sweep                        # D1
+
+cucc ../warp/warp_red2.cu -O2 -std=c++17 \
+     -I/opt/maca-3.3.0/tools/cu-bridge/include $MACA_CUCC_FLAGS -o warp_red2
+./warp_red2                       # D6（5-round 2016 / 6-round 4032）
+
+# D4：-O2 vs -O0
+cucc mt3bisect.cu -O2 ... -o t_O2 && ./t_O2     # segfault (exit 139)
+cucc mt3bisect.cu -O2 -fno-inline ... -o t_ok && ./t_ok
 
 # wmma 复现（PyTorch load_inline，需 KernelBench 环境）
 source /data/cuda-harness-migration/env.sh
-cd /data/cuda-harness-migration/optloop
-python3 diag_store2.py     # D2
-python3 diag_load.py      # D3
+cd defects/repro
+python3 diag_load_store.py       # D3（纯 load→store 往返，4/256 正确）
+python3 diag_store.py            # store 正常（255/255）
+python3 diag_store2.py           # D2（layout tag 被忽略）
 ```
 
 `-I/opt/maca-3.3.0/tools/cu-bridge/include` 不可省略，否则
