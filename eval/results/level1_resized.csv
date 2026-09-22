@@ -93,7 +93,7 @@ level,problem,name,compiled,correct,class,factor,error
 1,92,92_cumsum_exclusive,True,True,pass,0.250,
 1,93,93_masked_cumsum,True,True,pass,0.125,
 1,94,94_MSELoss,True,True,pass,0.125,
-1,95,95_CrossEntropyLoss,True,False,numeric,1.000,compiled: True; correct:  False
+1,95,95_CrossEntropyLoss,True,True,pass,1.000,
 1,96,96_HuberLoss,True,True,pass,0.125,
 1,97,97_ScaledDotProductAttention,True,True,pass,0.167,
 1,98,98_KLDivLoss,True,True,pass,1.000,
