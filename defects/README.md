@@ -17,13 +17,14 @@ mctlass device 层 GEMM 在所有尺寸下输出**静默错误结果**（不崩�
 
 | # | 缺陷 | 组件 | 严重度 | 静默？ | 复现 |
 |---|---|---|---|---|---|
-| D1 | mctlass device GEMM epilogue 从第 8 行起每行写错若干元素 | mctlass | **高（数据损坏）** | **是** | `mt3tail.cu` |
+| D1 | mctlass device GEMM epilogue 每个 16 行 tile 漏写 8 行 | mctlass | **高（数据损坏）** | **是** | `mt3sweep.cu` |
 | D2 | `wmma::store_matrix_sync` 忽略 layout tag | wmma | 中（语义错误） | 是 | `diag_store2.py` |
 | D3 | `wmma::load_matrix_sync` 在 lane ≥ 32 读到垃圾数据 | wmma | **高（数据损坏）** | **是** | `diag_load.py` |
 | D4 | mxcc `-O2` inlining 导致 mctlass host 端 segfault | mxcc | 高（崩溃） | 否（崩溃） | `mt3id.cu` |
 | D5 | wmma fp32/TF32 fragment 未定义 | wmma | 中（功能缺失） | 是（编译期） | `wmma_fp32_probe.cu` |
+| D6 | `__shfl_down_sync` offset≥32 时复制而非交换，归约结果翻倍 | runtime | 中（数据错误） | **是** | `warp_probe.cu` |
 
-其中 **D1、D3 是最危险的**：程序返回成功、结果完全错误。
+其中 **D1、D3、D6 是最危险的**：程序返回成功、结果完全错误。
 
 ---
 
@@ -233,6 +234,47 @@ C500 上不存在 TF32 tensor-core 路径。fp32 GEMM 只能走 SIMT（标量）
 
 ---
 
+## D6 — `__shfl_down_sync` 在 offset ≥ 32 时复制而非交换（2026-09-22 新增）
+
+**组件**：MACA runtime 的 warp shuffle
+
+### 现象
+
+64-lane warp 下，`__shfl_down_sync(mask, v, 32)` 应当让 low half 与
+high half **交换**值（CUDA 语义）。实测为**单向复制**：
+
+```
+lane  0: v=0  down32=32   ← 拿到 lane 32 的值（正确方向）
+lane 32: v=32 down32=32   ← 拿到自己的值，不是 lane 0 的值
+```
+
+（`repro/warp/warp_probe.cu`）
+
+### 后果：6 轮归约结果翻倍
+
+```
+5-round: 2016.0   6-round: 4032.0   expected: 2016.0
+```
+
+4032 = 2016 × 2：high half 的值被加两次。**5 轮归约在 C500 上反而是正确的**，
+因为它从不跨越 offset 32。这与直觉相反，也与 CUDA 语义不一致。
+
+### 影响范围
+
+`skills/c500-kernel-wiki/wiki/hardware/warp64-implications.md` 原本把
+`offset = warpSize/2`（6 轮）标为 RIGHT、5 轮标为 WRONG，本次实测后已修正。
+
+任何从 NVIDIA 代码搬来的"标准"warp 归约，只要轮数按 `warpSize` 推导，
+在 C500 上都会静默翻倍。若后续 SDK 修复成交换语义，5 轮写法又会变成
+丢一半数据的错误写法——**该写法危险，依赖 SDK 版本**。
+
+### 规避
+
+用 5 轮，或用显式两阶段归约（两个 32-lane 半 warp 内各自归约，
+再用 `__shfl_sync` 到目标 lane 做显式交换）。
+
+---
+
 ## 环境与构建命令
 
 ```bash
@@ -257,13 +299,16 @@ python3 diag_load.py      # D3
 
 ## 修改过的 SDK 头文件（当前状态）
 
-`/opt/maca-3.3.0/include/mctlass/` 下三处 `kWarpSize = 32` →
-`WarpSize<arch::OpClassSimt>::value`（D1 的部分、未完成的修复尝试）：
+**已全部回退，SDK 处于 pristine 状态**（2026-09-22 核实：两个头文件与
+`/tmp/orig_*.h` 备份 MD5 完全一致）。上述 D1 的实验性修改曾做过，
+但已恢复，D1 的复现数据全部是在 pristine 头文件下重新编译测得的。
 
+历史修改记录（仅供官方参考）：
 - `epilogue/threadblock/default_thread_map_simt.h:73`
-- `epilogue/threadblock/output_tile_thread_map.h:202, 227`（并加了
-  `#include "mctlass/gemm/warp/mma.h"`）
+- `epilogue/threadblock/output_tile_thread_map.h:202, 227`
+（把 `kWarpSize = 32` 改为 `WarpSize<arch::OpClassSimt>::value`。
+修正后 `kThreads` 匹配但行轴迭代计数仍不一致，进一步修改触发
+memory violation，故回退。）
 
 原始备份：`/tmp/orig_default_thread_map_simt.h`、
 `/tmp/orig_output_tile_thread_map.h`、`/tmp/orig_predicated_tile_iterator_params.h`。
-`predicated_tile_iterator_params.h` 的 `advance_group` 实验已回退。
