@@ -228,16 +228,23 @@ that did the push.
 
 ### 2. Report the MACA toolchain defects (cheap, high value, no GPU needed)
 
-Three defects are isolated and reproduced but not yet reported upstream to
-the vendor. The reproduction cases currently live in `/tmp` on this host and
-**will be lost when this environment is torn down**. Back them up and file
-them:
+Six defects are isolated, reproduced, and documented in
+[`defects/README.md`](defects/README.md) (D1–D6), with every reproducer
+checked into `defects/repro/`:
 
-| Defect | Impact | Reproduction |
-|---|---|---|
-| `wmma store_matrix_sync` is a **no-op** | The destination buffer is not modified at all; hand-filling the fragment then storing leaves every element unchanged | `optloop/diag_store*.py` in `/data/cuda-harness-migration/` |
-| `wmma load_matrix_sync` scrambles data | Hand-filled fragments + `mma_sync` + hand-written store reproduces `A@B` to 1e-6; replacing only the fill with `load_matrix_sync` breaks it | `optloop/diag_load*.py` |
-| mctlass device-GEMM SIMT epilogue writes only rows `r%16<8` | `C = A@I` leaves rows `r%16>=8` as zeros — silently wrong results, not a crash | `/tmp/mt3*.cu` (mctlass `Gemm` device layer, `-fno-inline` required) |
+| # | Defect | Silent? | Workaround |
+|---|---|---|---|
+| D1 | mctlass device-GEMM epilogue writes only half the rows of each 16-row tile | yes | none — the layer is unusable |
+| D2 | `wmma::store_matrix_sync` ignores the layout tag (row/col-major produce the same transposed output) | yes | transpose after store |
+| D3 | `wmma::load_matrix_sync` returns garbage for lanes ≥ 32 | yes | none — vectorised load is unusable |
+| D4 | mxcc `-O2` inlining segfaults on mctlass host-side construction | no (crash) | `-fno-inline` |
+| D5 | fp32/TF32 `wmma` fragments are not instantiated | compile error | go through fp16/bf16 |
+| D6 | `__shfl_down_sync` copies rather than swaps across offset 32, so a 6-round warp-64 reduction returns 2× the correct value | yes | use 5 rounds |
+
+D1, D3 and D6 are the dangerous ones: the program reports success and returns
+a completely wrong result. D6 in particular reverses the standard guidance
+(the derivation `offset = warpSize/2` is the *wrong* pattern on this SDK) —
+re-verify after any MACA upgrade.
 
 The mma intrinsic itself (`__builtin_mxc_mma_16x16x16f16`) is **correct**;
 only the load/store wrappers are broken. Also worth reporting: the mctlass
