@@ -153,7 +153,7 @@ A-fragment 填 `1000+lane`、B 填 1，跑 `mma_sync`——输出行 r 的值精
 
 ### 补充观察
 
-- 加 padding（ldm = 24 而非 16）**不能修复**（`diag_load2.py`：两个 ldm 都失败）
+- 加 padding（ldm = 24 而非 16）**不能修复**（`diag_load_store.py`：两个 ldm 都失败）
 - b fragment 的 `row_major`/`col_major` 标签行为互换（col_major 实际按行读）
 
 ### 为什么下游无法绕过
