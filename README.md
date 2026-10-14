@@ -12,12 +12,17 @@ instead of `ncu`, `mctracer_utils.py` instead of `ncu_report`.
 > **New to this repo?** Read these two sections in order — they are the whole
 > picture:
 > 1. [**Status: what 16.3 GB closed, and what it did not**](#status-what-163-gb-closed-and-what-it-did-not) — what is finished (everything that fits in 16.3 GB) and the measured KernelBench compatibility result.
-> 2. [**Next steps — the handoff to 64 GB**](#next-steps-the-handoff-to-64-gb) — the five-item ordered backlog. Performance tuning (item 3) and batch RL rollout (item 4) are the work that the 64 GB board unlocks.
+> 2. [**Next steps — the handoff to 64 GB**](#next-steps--the-handoff-to-64-gb) — the five-item ordered backlog. Performance tuning (item 3) and batch RL rollout (item 4) are the work that the 64 GB board unlocks.
 >
 > The compatibility layer is done: 250 KernelBench problems, **0 compile
-> failures, 0 genuine ecosystem incompatibility**. What is not done is making
-> kernels *fast* — currently **1 of 250** problems beats eager PyTorch. That
-> is the next phase.
+> failures**. Making the kernels *fast* is the work that remained: starting
+> from **1 of 250** problems beating eager, the mcblas fp16 GEMM path now
+> beats eager on **58 of 82** GEMM and linear-chain problems across L1/L2/L3
+> — see [Performance tuning](#3-performance-tuning--the-actual-64-gb-work)
+> for what is fast, and where the fp16 path's precision boundary falls.
+> At native (64 GB) scale, **249 / 250 problems pass** the correctness gate;
+> the one remaining failure, L1 P76, is a genuine MACA conv defect (D7 in
+> [`defects/README.md`](defects/README.md)), not a migration gap.
 
 ## What is ported
 
@@ -162,7 +167,7 @@ were closed on this host:
 | Workstream | Closed with |
 |---|---|
 | Build + correctness closure | cucc → cu-bridge → mxcc via `load_inline`; `eval_kernel_against_ref` end to end |
-| KernelBench compatibility | L1–L3, 250 problems; 0 compile failures, 0 genuine ecosystem incompatibility |
+| KernelBench compatibility | L1–L3, 250 problems; 0 compile failures. At resized scale: 0 genuine ecosystem incompatibility; at native 64 GB scale one defect surfaced (D7, L1 P76) |
 | C500 knowledge base + toolchain | `skills/c500-kernel-wiki` — 11 pages, 15 reproducible probes, `validate.py`/`query.py`/`generate-indices.py` |
 
 The measured compatibility result, per level (resized = inputs scaled to fit
@@ -228,8 +233,8 @@ that did the push.
 
 ### 2. Report the MACA toolchain defects (cheap, high value, no GPU needed)
 
-Six defects are isolated, reproduced, and documented in
-[`defects/README.md`](defects/README.md) (D1–D6), with every reproducer
+Seven defects are isolated, reproduced, and documented in
+[`defects/README.md`](defects/README.md) (D1–D7), with every reproducer
 checked into `defects/repro/`:
 
 | # | Defect | Silent? | Workaround |
@@ -240,11 +245,17 @@ checked into `defects/repro/`:
 | D4 | mxcc `-O2` inlining segfaults on mctlass host-side construction | no (crash) | `-fno-inline` |
 | D5 | fp32/TF32 `wmma` fragments are not instantiated | compile error | go through fp16/bf16 |
 | D6 | `__shfl_down_sync` copies rather than swaps across offset 32, so a 6-round warp-64 reduction returns 2× the correct value | yes | use 5 rounds |
+| D7 | Conv1d on a >~1.62e9-element input silently corrupts the first and last `(B−48)` batches of output; per-batch slices of the same tensor are all correct | yes | slice the batch dim |
 
-D1, D3 and D6 are the dangerous ones: the program reports success and returns
-a completely wrong result. D6 in particular reverses the standard guidance
-(the derivation `offset = warpSize/2` is the *wrong* pattern on this SDK) —
-re-verify after any MACA upgrade.
+D1, D3, D6 and D7 are the dangerous ones: the program reports success and
+returns a completely wrong result. D6 in particular reverses the standard
+guidance (the derivation `offset = warpSize/2` is the *wrong* pattern on this
+SDK) — re-verify after any MACA upgrade.
+
+D7 was invisible on the 16.3 GB board — its trigger threshold is ~6.5 GB of
+input, which did not fit — and surfaced only during 64 GB performance tuning.
+The unreduced conv output is the only path that miscomputes; slicing the
+batch dimension and concatenating avoids it.
 
 The mma intrinsic itself (`__builtin_mxc_mma_16x16x16f16`) is **correct**;
 only the load/store wrappers are broken. Also worth reporting: the mctlass
@@ -259,9 +270,40 @@ The vendor can fix them in the SDK; nobody downstream can.
 
 ### 3. Performance tuning — the actual 64 GB work
 
-Only **1 of 250 problems** currently beats eager (L1 P1, 1.693×). Extending
-this is the main deliverable of the next phase. The verified ceiling numbers
-for n=4096 square matmul, measured on this board:
+Starting from **1 of 250** problems beating eager (L1 P1, 1.693×), extending
+the mcblas fp16 GEMM path across the GEMM family reached **58 of 82**
+problems faster than eager, all gated through `eval_kernel_against_ref`:
+
+| scope | problems | faster than eager |
+|---|---:|---:|
+| L1 GEMM family | 13 | 11 |
+| L2 linear chains | 37 | 34 |
+| L3 networks using `nn.Linear` | 32 | 13 |
+| **total** | **82** | **58** |
+
+Largest wins: L3 ShallowWideMLP 6.87×, L2 P56 6.05×, L1 large-K 2.80×. The
+reference throughout is eager fp32 with TF32 on.
+
+The 58 was reached in two passes. The first pass measured 53/82 but ran with
+the models in train mode — `eval.py` never calls `.eval()`, an upstream
+KernelBench omission — and train-mode BatchNorm/Dropout divergence
+(3e-4..1e-2, with no candidate kernel in the loop) was masquerading as fp16
+precision error. The harness now defaults to eval mode
+(`eval_kernel_against_ref(..., eval_mode=True)`), which dropped the
+self-comparison noise to 0..4e-6 and moved five problems from "precision
+tail" to "faster than eager" (L2 P66 2.47×, P33 2.08×, P39 1.44×, P41 1.40×,
+L3 P15 1.06×). The fp16 path's true precision boundary is **four** problems,
+not the 29 originally recorded.
+
+A third pass tried selective fp32 on the two boundary problems that had
+per-layer routing space (L3 P32, P34): route only the error-injecting layer
+back to eager, keep the small one on the fp16 path. Both pass correctness
+5/5, but both measure **5–39% slower than the all-fp32 control** (P32
+0.974×, P34 0.743×), because in each model the heavy matmul *is* the
+error-injecting layer. Routing it back spends the only acceleration the
+model had, so neither joins the 58 and the total is unchanged.
+
+The verified ceiling numbers for n=4096 square matmul, measured on this board:
 
 | Path | Time | vs eager | Notes |
 |---|---|---|---|
@@ -271,10 +313,69 @@ for n=4096 square matmul, measured on this board:
 | mcblas fp32 direct | 4743 µs | 0.34× | Loses to TF32 eager — do not use |
 | hand-written wmma (working) | 6835 µs | 0.233× | Correct but scalar fragment fill is the bottleneck |
 
-Plan: extend `optloop/submit_mcblas.py` from L1 P1 to the other GEMM-shaped
-problems, then sweep block size / K-tile / stream count. Note the mcblas
-operand order is **reversed** relative to cuBLAS — `(OP_N, OP_N, B, A)` is
-what computes `A@B`.
+#### The mcblas conventions, since the docs were not available offline
+
+The reversed operand order is real, but it was only half of what was needed:
+`(OP_N, OP_N, B, A)` computes `A@B`, *and* the leading dimensions must be
+given per matrix. For `C = A@B` with row-major `A(M,K)`, `B(K,N)`, `C(M,N)`:
+
+```
+m = N, n = M, k = K
+E = B, ldE = N      (row-major B(K,N) is a column-major (N,K))
+F = A, ldF = K      (row-major A(M,K) is a column-major (K,M))
+C,     ldC = N
+```
+
+The original `optloop/submit_mcblas.py` passed `ld = m` (=`A.size(1)`) for
+all three matrices. That equals the correct value only for square problems —
+which is exactly why L1 P1 passed and every non-square shape silently
+produced garbage. Transposed operands are views, not copies: a transpose
+view is already column-major in its own storage, so `OP_T` reads it directly
+and no `.contiguous()` is needed.
+
+Two more entry points, each probed before use:
+
+- `mcblasGemmStridedBatchedEx` — one launch for a whole batch, covering L1
+  P3/P10/P11 and the L2 chains. **Strides are in elements, not bytes**; byte
+  strides produce an illegal memory access.
+- `mcblasHSSgemvStridedBatched` with `batchCount=1` — fp16 A, fp16 x, fp32 y,
+  for L1 P4. Convention `m=K, n=M, lda=K, trans=T`.
+
+#### Where the fp16 path stops
+
+Four problems are correct but fail the 1e-4 gate because fp16 *input*
+rounding is amplified by what follows the matmul — never a kernel defect.
+The linear op itself is ~1.5e-5 relative. What pushes these over is a
+reduction or normalisation across the contracted axis: summing an
+8192-wide row turns a 2e-8 mean error into ~2e-4, and BatchNorm divides by
+statistics that are themselves perturbed.
+
+The obvious rescues do not work: fp32 mcblas measures 4699 µs against
+eager's 1487 µs (**0.32×**, `probe_fp32_speed.py`), and bf16 carries 2%
+wrong elements. fp16 is the only operand type that beats eager, so these are
+the fast path's precision boundary rather than bugs. Selective fp32 — route
+only the amplifying layer back to eager — was measured too, on the two
+boundary problems with more than one matmul (L3 P32, P34): both then pass
+5/5 but land 5–39% *below* the all-fp16 control, because the heavy matmul
+is exactly the layer that must be routed back (see the note above). The
+remaining four boundary problems each have a single matmul, so for them
+"selective" means routing the whole model back to the reference. The
+direction is exhausted.
+
+An earlier version of this section counted 29 problems in this class. That
+figure was measured in train mode (see the note above) and mostly reflected
+BatchNorm/Dropout divergence between two model instances, not fp16 error.
+In eval mode 18 of the 29 pass — five of them faster than eager.
+
+The one remaining direction:
+
+1. **The convolutional networks.** L3's convolution-dominated models need an
+   mcdnn-based path, a different kernel family entirely.
+
+Also a measured negative result: **matrix-vector (L1 P4) does not have a
+GEMM-shaped win**. The fp16 GEMV path is 11.84 ms against eager's 8.18 ms
+(363 GB/s of the card's measured 1.27 TB/s), and the 8.6 GB fp32 input cast
+dominates. A win needs a fused cast or an fp16-input eager GEMV.
 
 Before quoting any fp32 number, **disable TF32**. C500 ships with
 `allow_tf32=True` by default; with it on, `nn.Conv1d` shows ~9.5e-4 error

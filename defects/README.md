@@ -28,8 +28,9 @@ D4 的 `-fno-inline` 规避无效。请以本版为准。
 | D4 | mxcc `-O2`+ 优化级别导致 mctlass host 端 segfault | mxcc | 高（崩溃） | 否（崩溃） | `mt3bisect.cu` |
 | D5 | wmma fp32/TF32 fragment 未定义 | wmma | 中（功能缺失） | 是（编译期） | `wmma_fp32_probe.cu` |
 | D6 | warp shuffle 把 64-lane warp 当作两个 32-lane 子组 | runtime | 中（归约结果翻倍） | **是** | `warp_probe.cu` |
+| D7 | 大张量（>~1.62e9 输入元素）Conv1d 输出部分 batch 静默损坏 | mcdnn/conv runtime | **高（数据损坏）** | **是** | `conv1d_large_tensor.py` |
 
-其中 **D1、D3、D6 是最危险的**：程序返回成功、结果完全错误。
+其中 **D1、D3、D6、D7 是最危险的**：程序返回成功、结果完全错误。
 
 > **已删除的 D2（2026-09-22 复核）**：原报告称 `store_matrix_sync` 忽略
 > layout tag。**该结论为假阳性**：原复现 `diag_store2.py` 把整数常量 **16 和 17**
@@ -315,10 +316,96 @@ lane 32 得 lane 0 的值（1000）。**MACA 把 64-lane warp 当成两个 32-la
 
 ---
 
+## D7 — 大张量 Conv1d 静默损坏部分 batch 的输出
+
+**组件**：`mcdnn` / 卷积运行时（PyTorch `nn.Conv1d` → MACA 卷积内核的大张量路径）
+
+**日期**：2026-10-14（64 GB C500 上发现；16.3 GB 主机内存不足以触及触发阈值）
+
+### 现象
+
+KernelBench L1 P76（`76_conv_standard_1D_dilated_strided__.py`）是迁移后
+**唯一**在"参考 vs 参考"比较中失败、且不受 eval 模式修复影响的问题。
+它的输入是 `(64, 64, 524280)` = **2,147,450,880** 个元素，距 int32 上限
+仅 32,768。
+
+对同一权重、同一输入做两次前向，输出中 **前 16 个与后 16 个 batch 是垃圾**
+（|diff| 高达 ~3），中间 32 个 batch 正确——坏 batch 占 64 个中的 32 个
+（batch 级 50%，元素级 49.9%）。程序不崩溃、不报错。
+`torch.backends.cudnn.deterministic = True` **完全不影响**本缺陷。
+坏/正确 batch 的集合每次运行都相同（前 16 + 后 16），但垃圾的**幅值**逐次
+不同（1.6–2.4），说明读到的是未初始化/错位的内存，而非确定性的错误计算。
+
+### 判决：不预设哪条路径错
+
+因为 passthrough 候选就是参考本身，"mismatch" 只能意味着两次前向之一发散。
+用 **im2col unfold + GEMM**（完全不跑卷积内核）做第三方仲裁。
+下面是一次实际运行的输出（垃圾幅值逐次不同，见下文）：
+
+```
+方法校验（小张量）: conv vs im2col maxdiff = 4.17e-07      <- 仲裁方法可信
+
+batch   |逐batch - 仲裁|   |全张量 - 仲裁|
+    0              6.56e-07         1.99e+00  垃圾
+    1              7.15e-07         1.93e+00  垃圾
+   16              8.35e-07         8.35e-07  正确
+   31              7.15e-07         7.15e-07  正确
+   47              7.15e-07         7.15e-07  正确
+   48              7.15e-07         2.43e+00  垃圾
+   62              7.15e-07         2.29e+00  垃圾
+   63              7.15e-07         2.26e+00  垃圾
+```
+
+**逐 batch 卷积（每片 ≤ 3350 万元素）在每个 batch 上都和仲裁一致到 ~7e-7——
+包括那些全张量结果为垃圾的 batch。错的是全张量卷积路径本身。**
+这不是候选内核缺陷，也不是 harness 缺陷，是 MACA 卷积运行时在大张量下的
+真实数据损坏。
+
+### 触发条件（B=64 固定，扫 L 二分实测）
+
+| in_elems | 结果 |
+|---|---|
+| 1,622,016,000 (L=396000) | ok |
+| 1,638,400,000 (L=400000) | **BAD**（仅 3/64 个 batch 坏） |
+| 2,147,450,880 (L=524280, P76) | **BAD**（32/64 个 batch 坏） |
+
+阈值附近坏 batch 只有 3 个而非满额，说明 2×(B−48) 是**饱和后的**形状，
+触发本身是渐变的。完整扫描见 `probe_conv32_sweep.py`（形状扫描）与
+`probe_boundary_points.py`（阈值边界点），结果存在
+`/data/task-gemm-perf/runs/conv32_sweep.json`、`conv32_boundary.json`。
+
+固定 L=524280 扫 B（48→64），坏 batch 数量精确等于 **2 × (B − 48)**，
+即前 (B−48) 个与后 (B−48) 个（11/11 个 B 值全部吻合）；B ≤ 48 时全对。
+另注意：输出元素数越过 2^30 **不是**触发条件（L=393230 时
+out=1,073,758,208 > 2^30 仍正确），输入元素数越过 ~1.62e9 才是。
+精确的内部阈值未进一步二分。
+
+### 为什么下游无法绕过
+
+P76 的输入尺寸由 KernelBench 按 48 GB 板卡给出，无法缩小（缩小即改变题目）。
+在 16.3 GB 主机上本缺陷从未被触及——输入本身就放不进显存——所以它是
+64 GB 板卡解锁后**新暴露**的缺陷，此前所有迁移结论都不受影响。
+对任何需要处理 > ~6.5 GB 输入张量的 1-D 卷积，此路径不可用；只能按 batch
+分片调用，而这改变了计算的组织方式。
+
+### 复现
+
+在仓库根目录执行（需 MACA PyTorch 环境，见 `README.md` 的
+`source env.sh`）：
+
+```bash
+cd defects/repro/conv
+python3 conv1d_large_tensor.py
+```
+
+复现程序内部先在小张量上验证仲裁方法本身与 conv 一致（4.17e-7），
+再在全尺寸上逐 batch 判决，避免"仲裁自己错了"的循环论证。
+需 ≥ 24 GB 显存（输入 6.5 GB + im2col 中间量）。
+
 ## 环境与构建命令
 
 ```bash
-source /data/kda-maca/env.sh          # MACA_PATH、cucc 到 PATH、$MACA_CUCC_FLAGS
+source env.sh                         # 仓库根目录；MACA_PATH、cucc 到 PATH、$MACA_CUCC_FLAGS
 
 # D1：mctlass epilogue（.cu，pristine 头文件）
 cd defects/repro/mctlass
@@ -338,8 +425,8 @@ cucc ../warp/shfl_decisive.cu -O2 -std=c++17 \
 cucc mt3bisect.cu -O2 ... -o t_O2 && ./t_O2          # segfault
 cucc mt3bisect.cu -O2 -fno-inline ... -o t_ok && ./t_ok   # 仍 segfault
 
-# wmma 复现（PyTorch load_inline，需 KernelBench 环境）
-source /data/cuda-harness-migration/env.sh
+# wmma 复现（PyTorch load_inline，需 MACA torch 环境）
+# （上面已 source env.sh）
 cd defects/repro/wmma
 python3 diag_load_store.py       # D3（纯 load→store 往返，4/256 正确）
 python3 diag_store3.py           # D2 反证：合法枚举值下两 tag 互为转置
@@ -361,6 +448,7 @@ python3 diag_fmap2.py            # D2 反证：(lane,elem) 逐项 256/256 转置
 | D5 | `defects/repro/wmma/wmma_fp32_probe.cu` | 预期编译失败 |
 | D6 | `defects/repro/warp/shfl_decisive.cu` | 决定性证据：`shfl_sync` 全 lane 同值（复核新增） |
 | D6 | `defects/repro/warp/warp_red2.cu`、`warp_probe.cu` | 归约 2016 vs 4032 |
+| D7 | `defects/repro/conv/conv1d_large_tensor.py` | im2col 仲裁 + 逐 batch 判决（PyTorch，64 GB 板） |
 | mcblas 对照 | `defects/repro/mctlass/mcblas_ok.cu` | N=256 mismatched=0（复核新增） |
 
 `-I/opt/maca-3.3.0/tools/cu-bridge/include` 不可省略，否则
@@ -421,3 +509,18 @@ memory violation，故回退。）
 4. **D4 改规避**：`-fno-inline` 在纯 cucc 路径上不修复 segfault；真实边界是优化级别 ≥ 2。
    注意 `optloop/mctlass_base.py` 里的 `-fno-inline` **仍必须保留**——
    在 torch `load_inline` 路径上它确实有效，两条路径行为相反，本身值得上报。
+
+---
+
+## 2026-10-14 D7 新增记录（64 GB 板）
+
+D7 不在 2026-09-22 的复核范围内——它是在 64 GB C500 上做性能调优时
+新发现的，16.3 GB 主机因显存不足从未触及触发阈值（输入需 > ~6.5 GB）。
+
+发现路径：250 题批量正确性复测中仅剩 10 题未过，逐题用 4 配置矩阵
+（train/eval × deterministic on/off）归因，其中 9 题是 harness 缺
+`.eval()`（上游 KernelBench 同样缺失，非本平台缺陷），唯一在 eval 模式下
+仍失败的就是 P76。im2col 仲裁确认参考前向本身在大张量下错误。
+
+与 D1/D3/D6 的区别：D7 是 **PyTorch 层 mcdnn 卷积运行时**的缺陷，
+不涉及 mctlass 或 wmma，触发条件是张量尺度而非算子语义。
