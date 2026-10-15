@@ -20,9 +20,13 @@ instead of `ncu`, `mctracer_utils.py` instead of `ncu_report`.
 > beats eager on **58 of 82** GEMM and linear-chain problems across L1/L2/L3
 > — see [Performance tuning](#3-performance-tuning--the-actual-64-gb-work)
 > for what is fast, and where the fp16 path's precision boundary falls.
-> At native (64 GB) scale, **249 / 250 problems pass** the correctness gate;
-> the one remaining failure, L1 P76, is a genuine MACA conv defect (D7 in
-> [`defects/README.md`](defects/README.md)), not a migration gap.
+> At native (64 GB) scale, **249 / 250 problems pass** the correctness gate
+> unpatched, and **250 / 250** under the D7-safe harness patch. The one
+> unpatched failure, L1 P76, is a genuine MACA conv defect (D7 in
+> [`defects/README.md`](defects/README.md)) — not a migration gap — and
+> because Conv1d is independent per batch sample, slicing the batch
+> dimension is exact, so the patch passes P76 5/5 without approximating
+> anything.
 
 ## What is ported
 
@@ -167,7 +171,7 @@ were closed on this host:
 | Workstream | Closed with |
 |---|---|
 | Build + correctness closure | cucc → cu-bridge → mxcc via `load_inline`; `eval_kernel_against_ref` end to end |
-| KernelBench compatibility | L1–L3, 250 problems; 0 compile failures. At resized scale: 0 genuine ecosystem incompatibility; at native 64 GB scale one defect surfaced (D7, L1 P76) |
+| KernelBench compatibility | L1–L3, 250 problems; 0 compile failures. At resized scale: 0 genuine ecosystem incompatibility; at native 64 GB scale one defect surfaced (D7, L1 P76) — mitigated inside the benchmark by the exact batch-slicing guard, under which the port is 250/250 |
 | C500 knowledge base + toolchain | `skills/c500-kernel-wiki` — 11 pages, 15 reproducible probes, `validate.py`/`query.py`/`generate-indices.py` |
 
 The measured compatibility result, per level (resized = inputs scaled to fit
@@ -245,7 +249,7 @@ checked into `defects/repro/`:
 | D4 | mxcc `-O2` inlining segfaults on mctlass host-side construction | no (crash) | `-fno-inline` |
 | D5 | fp32/TF32 `wmma` fragments are not instantiated | compile error | go through fp16/bf16 |
 | D6 | `__shfl_down_sync` copies rather than swaps across offset 32, so a 6-round warp-64 reduction returns 2× the correct value | yes | use 5 rounds |
-| D7 | Conv1d on a >~1.62e9-element input silently corrupts the first and last `(B−48)` batches of output; per-batch slices of the same tensor are all correct | yes | slice the batch dim |
+| D7 | Conv1d on a >~1.62e9-element input silently corrupts the first and last `(B−48)` batches of output; per-batch slices of the same tensor are all correct | yes | slice the batch dim (applied in the benchmark harness, see below) |
 
 D1, D3, D6 and D7 are the dangerous ones: the program reports success and
 returns a completely wrong result. D6 in particular reverses the standard
@@ -256,6 +260,19 @@ D7 was invisible on the 16.3 GB board — its trigger threshold is ~6.5 GB of
 input, which did not fit — and surfaced only during 64 GB performance tuning.
 The unreduced conv output is the only path that miscomputes; slicing the
 batch dimension and concatenating avoids it.
+
+The workaround is exact, not an approximation: Conv1d is independent per batch
+sample, so a sliced-and-concatenated forward is the same computation on a
+non-corrupted path. Adjudicated against an im2col + GEMM reference that never
+runs the conv kernel (2026-10-15): the sliced forward matches to 9.5e-07 with
+zero bad elements, while the full-tensor forward differs by 1.99 across ~357M
+elements. Notably the corrupted path is also the *reference* forward inside
+the KernelBench gate, so the fix belongs at the harness layer — the benchmark
+wraps `nn.Conv1d.forward` with the same guard above 1.62e9 elements, which
+makes both sides of the comparison correct. Under that patch the full port is
+250 / 250 (the unpatched 249 / 250 remains the platform-level figure); only
+3 of the 250 problems use Conv1d at all, and of those only one exceeds the
+guard, so the blast radius is one problem.
 
 The mma intrinsic itself (`__builtin_mxc_mma_16x16x16f16`) is **correct**;
 only the load/store wrappers are broken. Also worth reporting: the mctlass
