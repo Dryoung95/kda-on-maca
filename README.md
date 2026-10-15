@@ -389,9 +389,11 @@ The one remaining direction:
 1. ~~**The convolutional networks.** L3's convolution-dominated models need an
    mcdnn-based path, a different kernel family entirely.~~ **Closed
    (2026-10-15) as a measured negative.** The conv family was opened and all
-   four plausible paths disproved; see
-   [`task-gemm-perf/docs/conv-family-negative.md`](../task-gemm-perf/docs/conv-family-negative.md)
-   for the full evidence. In short: the SDK has **no usable fp16 conv path**
+   four plausible paths disproved; the full evidence — five reproducible
+   probes, their raw JSON, and the write-up — is published in the sibling
+   [`maca-harness`](https://github.com/Dryoung95/maca-harness) repository at
+   [`docs/conv-family/conv-family-negative.md`](https://github.com/Dryoung95/maca-harness/blob/main/docs/conv-family/conv-family-negative.md).
+   In short: the SDK has **no usable fp16 conv path**
    (`f16→f32` returns `BAD_PARAM`, `f16→f16` executes at 5.7e-2 error), so the
    GEMM line's central trick does not transfer; and the one gate-correct
    direct-mcdnn configuration (`PRECOMP_GEMM` + `DEFAULT_MATH`) is a **tie at
@@ -415,6 +417,15 @@ Before quoting any fp32 number, **disable TF32**. C500 ships with
 against fp32, which silently fails the 1e-4 KernelBench tolerance. With it
 off, the difference is exactly 0.0. Any fp32 correctness verdict that does
 not first disable TF32 may be reporting a precision policy as a backend bug.
+
+That rule is for *diagnosing* a backend defect, and it has a mirror image
+the conv-family line ran into: the gate's own reference is eager fp32
+**with TF32 on**, so a candidate measured against a TF32-off reference is
+being held to a stricter standard than the one that grades it. Measured
+against the correct TF32-on yardstick, the exact-fp32 (FMA) mcdnn path
+*fails* the 1e-4 gate — it is more precise than its own reference, and the
+difference reads as error. Disable TF32 when hunting for platform defects;
+keep it on when predicting what the gate will say.
 
 ### 4. Batch rollout for the agent loop (needs 64 GB)
 
