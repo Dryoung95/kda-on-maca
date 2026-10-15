@@ -386,8 +386,24 @@ In eval mode 18 of the 29 pass — five of them faster than eager.
 
 The one remaining direction:
 
-1. **The convolutional networks.** L3's convolution-dominated models need an
-   mcdnn-based path, a different kernel family entirely.
+1. ~~**The convolutional networks.** L3's convolution-dominated models need an
+   mcdnn-based path, a different kernel family entirely.~~ **Closed
+   (2026-10-15) as a measured negative.** The conv family was opened and all
+   four plausible paths disproved; see
+   [`task-gemm-perf/docs/conv-family-negative.md`](../task-gemm-perf/docs/conv-family-negative.md)
+   for the full evidence. In short: the SDK has **no usable fp16 conv path**
+   (`f16→f32` returns `BAD_PARAM`, `f16→f16` executes at 5.7e-2 error), so the
+   GEMM line's central trick does not transfer; and the one gate-correct
+   direct-mcdnn configuration (`PRECOMP_GEMM` + `DEFAULT_MATH`) is a **tie at
+   maxdiff exactly 0.000** because eager conv already runs through the same
+   `libmcdnn.so` torch links — calling mcdnn ourselves *is* the eager path,
+   not a faster one. The FMA (exact-fp32) variants are more precise than the
+   TF32 reference and therefore *fail* the 1e-4 gate. The im2col + fp16 GEMM
+   decomposition loses on both axes: `F.unfold` alone costs 2–3× the whole
+   eager conv (9.66 GB of shuffle traffic on P55), and its maxdiff is 3–6e-2.
+   What would move conv is a vendor-side fix (working fp16 conv, or
+   instantiated Winograd kernels), not a harness-side one — the **58/82**
+   GEMM-family result stands as the performance line's final number.
 
 Also a measured negative result: **matrix-vector (L1 P4) does not have a
 GEMM-shaped win**. The fp16 GEMV path is 11.84 ms against eager's 8.18 ms
