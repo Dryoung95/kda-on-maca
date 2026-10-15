@@ -127,10 +127,10 @@ A stated gap is evidence-grade. An invented counter value is a bug.
 
 Profiling and correctness checking are separate concerns on this stack.
 KernelBench is already migrated to this C500 host at
-`/data/cuda-harness-migration/KernelBench`. The packaged gate wraps it:
+`/data/maca-harness/KernelBench`. The packaged gate wraps it:
 
 ```bash
-source /data/cuda-harness-migration/env.sh     # needs KernelBench on PYTHONPATH
+source /data/maca-harness/env.sh     # needs KernelBench on PYTHONPATH
 python3 scripts/correctness_gate.py --level 1 --problem 1 \
     --candidate my_kernel.py --verbose
 # → compiled: True / correct: True, exit 0 on pass

@@ -18,8 +18,8 @@
 这是适配问题的第一层：在问"agent 能不能优化"之前，先问"语料能不能跑"。
 
 ```bash
-source /data/kda-maca/env.sh
-source /data/cuda-harness-migration/env.sh
+cd <kda-on-maca> && source env.sh     # this repository
+source /data/maca-harness/env.sh
 python3 scripts/run_level.py --level 1 --out results/level1.csv
 ```
 
@@ -76,7 +76,7 @@ CrossEntropyLoss、HuberLoss、ScaledDotProductAttention）。判定标准是 ga
 分组数、标签长度等结构常量保持不变），并关闭 TF32 后重跑同一门槛：
 
 ```
-source /data/kda-maca/env.sh && source /data/cuda-harness-migration/env.sh
+cd <kda-on-maca> && source env.sh && source /data/maca-harness/env.sh
 python3 scripts/run_level_resized.py --budget-gib 4 --out results/level1_resized.csv
 ```
 

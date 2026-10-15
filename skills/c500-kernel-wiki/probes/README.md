@@ -8,7 +8,7 @@ the only way to establish an architecture fact.
 ## Build and run
 
 ```bash
-source /data/kda-maca/env.sh
+cd <kda-on-maca> && source env.sh
 cucc probe_blocksize.cu -O2 -std=c++17 $MACA_CUCC_FLAGS -o probe_blocksize
 ./probe_blocksize
 ```

@@ -6,7 +6,7 @@ you launch geometry and timing, KernelBench tells you whether the kernel
 produces the right numbers. Run this before promoting any candidate.
 
 Usage:
-    source /data/cuda-harness-migration/env.sh   # needs KernelBench on PYTHONPATH
+    source /data/maca-harness/env.sh   # needs KernelBench on PYTHONPATH
     python3 correctness_gate.py --level 1 --problem 1 --candidate my_kernel.py
 
 The candidate file must define a `ModelNew` nn.Module — the KernelBench
@@ -22,9 +22,9 @@ from pathlib import Path
 try:
     from kernelbench.eval import eval_kernel_against_ref
 except ImportError:
-    sys.exit("kernelbench not importable — source /data/cuda-harness-migration/env.sh first")
+    sys.exit("kernelbench not importable — source /data/maca-harness/env.sh first")
 
-DATASET_ROOT = Path("/data/cuda-harness-migration/KernelBench/KernelBench")
+DATASET_ROOT = Path("/data/maca-harness/KernelBench/KernelBench")
 
 
 def problem_path(level: int, problem: int) -> Path:

@@ -72,7 +72,7 @@ Two things differ from the NVIDIA-flavored workflow and both affect evidence:
 1. **Correctness is separate from profiling.** Validate with the correctness
    gate, which calls the migrated KernelBench `eval_kernel_against_ref`:
    ```bash
-   source /data/cuda-harness-migration/env.sh
+   source /data/maca-harness/env.sh
    python3 /path/to/kda-maca/scripts/correctness_gate.py \
        --level <L> --problem <P> --candidate <your ModelNew .py>
    ```

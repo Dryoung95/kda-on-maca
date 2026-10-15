@@ -14,8 +14,8 @@ predictions and targets keep a shared batch size -- because a shape that
 violates an op's constraints fails for the wrong reason.
 
 Usage:
-    source /data/kda-maca/env.sh
-    source /data/cuda-harness-migration/env.sh
+    cd <kda-on-maca> && source env.sh   # from the repository root
+    source /data/maca-harness/env.sh
     python3 scripts/run_level_resized.py --budget-gib 4 --out results/level1_resized.csv
 """
 
@@ -29,8 +29,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-GATE = Path("/data/kda-maca/scripts/correctness_gate.py")
-DATASET = Path("/data/cuda-harness-migration/KernelBench/KernelBench")
+_REPO = Path(__file__).resolve().parents[2]
+GATE = _REPO / "scripts" / "correctness_gate.py"
+DATASET = Path("/data/maca-harness/KernelBench/KernelBench")
 GPU_BUDGET_BYTES_DEFAULT = 4 * 2**30
 
 # torch.backends.cudnn.allow_tf32 defaults to True on C500 and its ~1e-3 error

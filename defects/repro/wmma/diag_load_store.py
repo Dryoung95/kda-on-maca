@@ -1,5 +1,5 @@
 import sys, os, torch
-sys.path.insert(0, '/data/cuda-harness-migration/optloop')
+sys.path.insert(0, '/data/maca-harness/optloop')
 from torch.utils.cpp_extension import load_inline
 
 # Pure round-trip: load a known tile into a fragment, store it back.
@@ -43,11 +43,11 @@ torch::Tensor roundtrip(torch::Tensor C, int ldm) {
 }
 """
 
-os.makedirs('/data/cuda-harness-migration/optloop/diagbuild/rt', exist_ok=True)
+os.makedirs('/data/maca-harness/optloop/diagbuild/rt', exist_ok=True)
 m = load_inline(name='diag_rt',
     cpp_sources=["torch::Tensor roundtrip(torch::Tensor C, int ldm);"],
     cuda_sources=[SRC], functions=['roundtrip'],
-    build_directory='/data/cuda-harness-migration/optloop/diagbuild/rt', verbose=False)
+    build_directory='/data/maca-harness/optloop/diagbuild/rt', verbose=False)
 
 import torch
 n = 16

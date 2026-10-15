@@ -10,8 +10,8 @@ That is the first-order adaptation question — before asking whether an agent
 can optimize a kernel on C500, we ask whether the kernel corpus even runs here.
 
 Usage:
-    source /data/kda-maca/env.sh
-    source /data/cuda-harness-migration/env.sh
+    cd <kda-on-maca> && source env.sh   # from the repository root
+    source /data/maca-harness/env.sh
     python3 scripts/run_level.py --level 1 [--out results/level1.csv]
 """
 
@@ -23,8 +23,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-GATE = Path("/data/kda-maca/scripts/correctness_gate.py")
-DATASET = Path("/data/cuda-harness-migration/KernelBench/KernelBench")
+_REPO = Path(__file__).resolve().parents[2]
+GATE = _REPO / "scripts" / "correctness_gate.py"
+DATASET = Path("/data/maca-harness/KernelBench/KernelBench")
 
 
 def rename_to_model_new(src: str) -> str:

@@ -20,7 +20,7 @@ export KDA_PROFILE_ROOT="${KDA_PROFILE_ROOT:-/tmp/kda_maca_profile}"
 mkdir -p "$KDA_PROFILE_ROOT"
 
 # KernelBench harness for validation/evaluation runs
-export KERNELBENCH_ROOT="${KERNELBENCH_ROOT:-/data/cuda-harness-migration/KernelBench}"
+export KERNELBENCH_ROOT="${KERNELBENCH_ROOT:-/data/maca-harness/KernelBench}"
 
 # cucc needs the cu-bridge macro headers; keep the flag explicit for harness builds.
 export MACA_CUCC_FLAGS="-DUSE_MACA -I$MACA_PATH/tools/cu-bridge/include"
