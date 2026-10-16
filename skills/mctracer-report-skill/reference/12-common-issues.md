@@ -13,7 +13,7 @@ headers, which are not on its default include path.
 **Fix:** pass the include path explicitly.
 
 ```bash
-source /path/to/kda-maca/env.sh
+source /path/to/kda-on-maca/env.sh
 cucc harness.cu -O2 -std=c++17 $MACA_CUCC_FLAGS -o harness
 # expands to: -DUSE_MACA -I/opt/maca-3.3.0/tools/cu-bridge/include
 ```
@@ -32,7 +32,7 @@ is sourced.
 /opt/maca-3.3.0/tools/cu-bridge/bin/cucc
 ```
 
-**Fix:** `source /path/to/kda-maca/env.sh` (it prepends the cu-bridge `bin`
+**Fix:** `source /path/to/kda-on-maca/env.sh` (it prepends the cu-bridge `bin`
 to `PATH`), or call it by full path.
 
 ---

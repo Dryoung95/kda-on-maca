@@ -35,7 +35,7 @@ workflow is unchanged; the toolchain references are.
   workloads that fit on 48 GB boards OOM here. Treat OOM as a workload-sizing
   issue, not a backend defect.
 
-Always `source /path/to/kda-maca/env.sh` before building, profiling, or
+Always `source /path/to/kda-on-maca/env.sh` before building, profiling, or
 running anything.
 
 ## Workflow
@@ -73,7 +73,7 @@ Two things differ from the NVIDIA-flavored workflow and both affect evidence:
    gate, which calls the migrated KernelBench `eval_kernel_against_ref`:
    ```bash
    source /data/maca-harness/env.sh
-   python3 /path/to/kda-maca/scripts/correctness_gate.py \
+   python3 /path/to/kda-on-maca/scripts/correctness_gate.py \
        --level <L> --problem <P> --candidate <your ModelNew .py>
    ```
    Never couple a correctness check to a profiling run — it pollutes the

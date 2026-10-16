@@ -38,7 +38,7 @@ measure.
 Minimal runnable command listing:
 
     # Compile
-    source <kda-maca>/env.sh
+    source <kda-on-maca>/env.sh
     cucc harness.cu -O2 -std=c++17 $MACA_CUCC_FLAGS -o harness
 
     # Trace (single pass; --odname is relative to the cwd)

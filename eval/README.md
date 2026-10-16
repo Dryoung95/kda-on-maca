@@ -4,15 +4,16 @@
 生态上的适配度做量化评估。上游 KDA 原生只支持 NVIDIA B200/B300（Blackwell），本仓库回答
 "这个 agent 驱动的 kernel 优化工作流，在国产 GPU 生态上能跑多远"。
 
-与 `kda-maca`（迁移产物，可复用工作流框架）的关系：本仓库是**下游应用**，按
-`agent-flow.md` 的分层，评估结果属于 task workspace，不回混框架仓库。
+本仓库既是迁移产物（工作流框架在 `prompts/` + `skills/`），也包含评估结果
+（本 `eval/` 子树）。按 `agent-flow.md` 的分层，这里的评估数字属于 task workspace
+内容，已随 subtree 并入本仓库；其独立 git 历史见 README "Repository history" 一节。
 
 ## 评估方法
 
 **第一层：生态兼容性（KernelBench 正确性门槛）**
 
 每题用自己的参考实现当候选（`Model` → `ModelNew` 改名），调
-`kda-maca/scripts/correctness_gate.py`。通过 = CUDA 语法源码经 cucc 编译并在 MACA 上
+`scripts/correctness_gate.py`（本仓库）。通过 = CUDA 语法源码经 cucc 编译并在 MACA 上
 产生正确结果，**源码零修改**。
 
 这是适配问题的第一层：在问"agent 能不能优化"之前，先问"语料能不能跑"。
@@ -20,7 +21,7 @@
 ```bash
 cd <kda-on-maca> && source env.sh     # this repository
 source /data/maca-harness/env.sh
-python3 scripts/run_level.py --level 1 --out results/level1.csv
+python3 eval/scripts/run_level.py --level 1 --out eval/results/level1.csv
 ```
 
 **第二层：重设尺寸后的正确性**（`scripts/run_level_resized.py`）。原始尺寸按 48GB
@@ -77,7 +78,7 @@ CrossEntropyLoss、HuberLoss、ScaledDotProductAttention）。判定标准是 ga
 
 ```
 cd <kda-on-maca> && source env.sh && source /data/maca-harness/env.sh
-python3 scripts/run_level_resized.py --budget-gib 4 --out results/level1_resized.csv
+python3 eval/scripts/run_level_resized.py --budget-gib 4 --out eval/results/level1_resized.csv
 ```
 
 | 类别 | 数量 |

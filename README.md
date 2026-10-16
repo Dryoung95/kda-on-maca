@@ -75,9 +75,9 @@ mcTracer --odname reports --name base ./harness/matmul_harness
 
 # 3. analyze
 H=skills/mctracer-report-skill/helpers
-python3 $H/kernel_inventory.py --run-dir . --report "reports/base-*.json" --tag base
-python3 $H/analyze_reports.py --run-dir . --report "reports/base-*.json" --tag base
-python3 $H/plot_timeline.py --run-dir . --report "reports/base-*.json" --tag base
+python3 $H/kernel_inventory.py --run-dir . --report reports/base-*.json --tag base
+python3 $H/analyze_reports.py --run-dir . --report reports/base-*.json --tag base
+python3 $H/plot_timeline.py --run-dir . --report reports/base-*.json --tag base
 ```
 
 Then follow `skills/mctracer-report-skill/SKILL.md` through diagnosis and the
@@ -186,9 +186,10 @@ The measured compatibility result, per level (resized = inputs scaled to fit
 **Compile pass rate is 100% across all 250 problems.** Every remaining failure
 is either memory capacity or a numeric difference, not a compile/semantic gap.
 See [`eval/README.md`](eval/README.md) for the per-problem CSVs and the root
-cause of each failure. `eval/` is a git subtree of the standalone
-[Dryoung95/kda-on-maca](https://github.com/Dryoung95/kda-on-maca) evaluation
-repository.
+cause of each failure. `eval/` is a git subtree of the former standalone
+evaluation repository (`kda-maca-eval`); its history was folded into this
+repository when the two were pushed together — see the
+[Repository history](#next-steps--the-handoff-to-64-gb) note below.
 
 ### The 16.3 GB wall — why this host stops here
 

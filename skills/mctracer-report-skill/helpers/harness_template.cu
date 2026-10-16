@@ -9,7 +9,7 @@
 //   2. Paste your kernel (and any __device__ helpers) below, or #include it.
 //   3. Fill in alloc_and_fill() and launch_kernel().
 //   4. Build:
-//        source <kda-maca>/env.sh
+//        source <kda-on-maca>/env.sh
 //        cucc my_kernel_harness.cu -O2 -std=c++17 $MACA_CUCC_FLAGS -o my_kernel_harness
 //   5. Trace:
 //        mcTracer --odname ../reports --name <tag> ./my_kernel_harness [args]

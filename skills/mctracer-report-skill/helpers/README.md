@@ -13,7 +13,7 @@ helpers — same CLI shape, different backend.
 ### Typical harness setup
 
 ```bash
-source /path/to/kda-maca/env.sh
+source /path/to/kda-on-maca/env.sh
 cd profile/<run_name>/harness/
 cp /path/to/skills/mctracer-report-skill/helpers/harness_template.cu my_kernel_harness.cu
 # edit my_kernel_harness.cu to include your kernel + fill in main()
@@ -53,9 +53,15 @@ python3 $HELPERS/plot_timeline.py --run-dir $PROFILE_RUN_DIR \
     --report $PROFILE_RUN_DIR/reports/<tag1>-*.json --tag <tag1>
 ```
 
-Note: `--report` accepts a glob (`reports/base-*.json`) since mcTracer appends
-the traced process's pid to the filename. `--run-dir` may be absolute;
-mcTracer's `--odname` may not — see `reference/03-collection.md`.
+Note: the glob (`reports/<tag>-*.json`) must be expanded by the **shell**, so
+leave `--report` unquoted — the scripts take literal paths and do not glob
+internally. The pattern is needed because mcTracer appends the traced
+process's pid to the filename. `--run-dir` may be absolute; mcTracer's
+`--odname` may not — see `reference/03-collection.md`.
+
+`analyze_reports.py` and `plot_timeline.py` take repeated `--report/--tag`
+pairs for side-by-side comparison; `kernel_inventory.py` takes a single
+`--report`/`--tag`.
 
 All three scripts take `--run-dir` and write under `<run-dir>/analysis/`.
 `mctracer_utils.py` is pure Python stdlib — no `ncu_report`, no `PYTHONPATH`

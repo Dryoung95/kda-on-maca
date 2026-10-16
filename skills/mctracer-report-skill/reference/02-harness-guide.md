@@ -62,7 +62,7 @@ A complete reusable template lives at
 Compile with:
 
 ```bash
-source /path/to/kda-maca/env.sh
+source /path/to/kda-on-maca/env.sh
 cucc my_kernel_harness.cu -O2 -std=c++17 $MACA_CUCC_FLAGS -o my_kernel_harness
 ```
 

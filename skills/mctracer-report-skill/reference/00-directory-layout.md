@@ -148,7 +148,7 @@ mcTracer --odname reports --name <tag> ./harness/kernel_harness [args]
 
 # parse (--run-dir is fine as an absolute path)
 python3 analyze_reports.py --run-dir "$PROFILE_RUN_DIR" \
-    --report "$PROFILE_RUN_DIR/reports/<tag>-*.json" --tag <tag>
+    --report $PROFILE_RUN_DIR/reports/<tag>-*.json --tag <tag>
 ```
 
 All helper scripts accept `--run-dir` and write analysis output under it.

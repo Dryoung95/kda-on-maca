@@ -58,7 +58,7 @@ wrong thing wastes an hour.
 
 ```bash
 # 1. MACA SDK + cu-bridge toolchain
-source /path/to/kda-maca/env.sh
+source /path/to/kda-on-maca/env.sh
 cucc --version          # cu-bridge CUDA-syntax front end
 mxcc --version          # MACA device compiler
 
